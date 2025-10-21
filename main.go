@@ -101,11 +101,7 @@ func (pvgss *PVGSS) PVGSSKeyGen(pp *PublicParameter, attributeSet string) (*OSK,
 		kxs[x] = new(bn256.G1).ScalarMult(pp.PkXs[x], t)
 	}
 
-	osk := &OSK{
-		L:   l,
-		KXs: kxs,
-	}
-	return osk, nil
+	return &OSK{L: l, KXs: kxs}, nil
 }
 
 // HashToG1函数实现将一个属性x映射到G1群上的一个点
