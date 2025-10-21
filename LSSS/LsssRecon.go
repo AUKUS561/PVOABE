@@ -9,16 +9,19 @@ import (
 	"github.com/fentec-project/gofe/data"
 )
 
-// LSSSRecon 实现秘密份额的重构。
-// 它适用于任何基于 LSSS 的 ABE 方案，如 Waters 2011
-//
-// 输入:
-//
-//	msp: 包含 LSSS 矩阵 M 和行属性映射的 MSP 结构体
-//	shares: map[int]*bn256.GT，包含满足策略的属性行索引 i 及其对应的 GT 份额 Ai
-//	p: 域的素数阶。
-//
-// 输出: 重构后的 GT 群元素
+/*
+LSSSRecon 实现秘密份额的重构。
+
+	它适用于任何基于 LSSS 的 ABE 方案，如 Waters 2011
+
+输入:
+
+	msp: 包含 LSSS 矩阵 M 和行属性映射的 MSP 结构体
+	shares: map[int]*bn256.GT，包含满足策略的属性行索引 i 及其对应的 GT 份额 Ai
+	p: 域的素数阶。
+
+输出: 重构后的 GT 群元素
+*/
 func LSSSRecon(msp *MSP, shares map[int]*bn256.GT, p *big.Int) (*bn256.GT, error) {
 	if len(shares) == 0 {
 		return nil, errors.New("no attributes satisfy the policy for reconstruction")

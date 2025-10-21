@@ -16,7 +16,6 @@ func TestLSSSCompleteFlow(t *testing.T) {
 	require.NoError(t, err, "创建MSP时出错")
 	require.NotNil(t, msp, "MSP不应为nil")
 
-	// 设置一个大素数作为域的阶
 	p := bn256.Order // 使用bn256曲线的阶作为域的阶
 
 	// 2. 测试 LSSSShare：生成秘密份额
@@ -32,7 +31,7 @@ func TestLSSSCompleteFlow(t *testing.T) {
 	}
 
 	// 3. 准备用于重构的GT元素份额
-	// 模拟将λi映射到GT群元素的过程（在实际的ABE方案中，这通常涉及配对运算）
+	// 模拟将λi映射到GT群元素的过程
 	shares := make(map[int]*bn256.GT)
 	g := new(bn256.GT).ScalarBaseMult(big.NewInt(1)) // 生成GT群的生成元
 
