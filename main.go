@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"fmt"
 	"math/big"
 	"strings"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/fentec-project/gofe/sample"
 )
 
-type PublicKey struct {
+type PublicParameter struct {
 	G     *bn256.G1            //群生成元g
 	H     *bn256.G1            //h
 	HXs   map[string]*bn256.G1 //{hx}
@@ -31,9 +32,9 @@ func NewPVGSS() *PVGSS {
 	return &PVGSS{P: bn256.Order}
 }
 
-// (SK, PK) ← PVGSS.Setup(1κ, U)
+// (SK, PP) ← PVGSS.Setup(1κ, U)
 // 输入属性宇宙U，按照"清华 北大 博士 硕士 教授"格式输入，属性之间按空格分开
-func (pvgss *PVGSS) PVGSSSetup(attributeUniverse string) (*PublicKey, *SecretKey, error) {
+func (pvgss *PVGSS) PVGSSSetup(attributeUniverse string) (*PublicParameter, *SecretKey, error) {
 	//G1的生成元g
 	g := new(bn256.G1).ScalarBaseMult(big.NewInt(1))
 
@@ -58,7 +59,7 @@ func (pvgss *PVGSS) PVGSSSetup(attributeUniverse string) (*PublicKey, *SecretKey
 		pkxs[x] = pkx
 	}
 
-	PK := &PublicKey{
+	PP := &PublicParameter{
 		G:     g,
 		H:     h,
 		HXs:   hxs,
@@ -71,7 +72,40 @@ func (pvgss *PVGSS) PVGSSSetup(attributeUniverse string) (*PublicKey, *SecretKey
 		A: a,
 	}
 
-	return PK, SK, nil
+	return PP, SK, nil
+}
+
+type OSK struct {
+	L   *bn256.G1
+	KXs map[string]*bn256.G1
+}
+
+// OSK ← PVGSS.KeyGen(Su)
+func (pvgss *PVGSS) PVGSSKeyGen(pp *PublicParameter, attributeSet string) (*OSK, error) {
+	p := pp.Order //群的阶p
+	//t←Zp,L=g^t
+	sampler := sample.NewUniformRange(big.NewInt(1), p)
+	t, _ := sampler.Sample()
+	l := new(bn256.G1).ScalarBaseMult(t) //L=g^t
+	//{Kx = pkx^t}x∈Su
+	kxs := make(map[string]*bn256.G1)
+	//1.从用户属性集合attributeSet中分割出单个属性
+	singleAtt := strings.Split(attributeSet, " ")
+	for _, x := range singleAtt {
+		//2.找到该属性对应的pkx
+		_, ok := pp.PkXs[x]
+		if !ok {
+			return nil, fmt.Errorf("attribute %s not in public parameters", x)
+		}
+		//3.计算Kx=pkx^t
+		kxs[x] = new(bn256.G1).ScalarMult(pp.PkXs[x], t)
+	}
+
+	osk := &OSK{
+		L:   l,
+		KXs: kxs,
+	}
+	return osk, nil
 }
 
 // HashToG1函数实现将一个属性x映射到G1群上的一个点
