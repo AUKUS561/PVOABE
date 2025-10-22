@@ -3,17 +3,13 @@ package LSSS
 import (
 	"math/big"
 
+	"github.com/fentec-project/gofe/abe"
 	"github.com/fentec-project/gofe/data"
 	"github.com/fentec-project/gofe/sample"
 )
 
-// LSSSShareResult 存放λi
-type LSSSShareResult struct {
-	lambda map[int]*big.Int // λi
-}
-
 // LSSSShare 执行 λ = M * v
-func LSSSShare(msp *MSP, S *big.Int, p *big.Int) (*LSSSShareResult, error) {
+func Share(msp *abe.MSP, S *big.Int, p *big.Int) (map[int]*big.Int, error) {
 	sampler := sample.NewUniform(p)
 	// random vector v with S as first element
 	v, err := data.NewRandomVector(msp.Mat.Cols(), sampler)
@@ -34,5 +30,5 @@ func LSSSShare(msp *MSP, S *big.Int, p *big.Int) (*LSSSShareResult, error) {
 		lambdaMap[i] = new(big.Int).Mod(val, p)
 	}
 
-	return &LSSSShareResult{lambda: lambdaMap}, nil
+	return lambdaMap, nil
 }

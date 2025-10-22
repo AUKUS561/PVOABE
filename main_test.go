@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPVGSSSetup(t *testing.T) {
+func TestSetup(t *testing.T) {
 	pvgss := NewPVGSS()
 	attrs := "清华 北大 海南大学 博士 硕士 教授"
 
-	pp, sk, err := pvgss.PVGSSSetup(attrs)
+	pp, sk, err := pvgss.Setup(attrs)
 	require.NoError(t, err)
 	require.NotNil(t, pp)
 	require.NotNil(t, sk)
@@ -47,16 +47,16 @@ func TestPVGSSSetup(t *testing.T) {
 	require.True(t, pp.Order.Cmp(big.NewInt(0)) > 0)
 }
 
-func TestPVGSSKeyGen(t *testing.T) {
+func TestKeyGen(t *testing.T) {
 	//先生成PP
 	pvgss := NewPVGSS()
 	attrs := "清华 北大 海南大学 硕士 博士 教授"
-	pp, _, err := pvgss.PVGSSSetup(attrs)
+	pp, _, err := pvgss.Setup(attrs)
 	require.NoError(t, err)
 	require.NotNil(t, pp)
 	//选择用户属性集Su
 	userAttrs := "清华 博士"
-	osk, err := pvgss.PVGSSKeyGen(pp, userAttrs)
+	osk, err := pvgss.KeyGen(pp, userAttrs)
 	require.NoError(t, err)
 	require.NotNil(t, osk)
 	// 打印 OSK 的所有参数

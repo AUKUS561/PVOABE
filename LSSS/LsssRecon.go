@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	"github.com/fentec-project/bn256"
+	"github.com/fentec-project/gofe/abe"
 	"github.com/fentec-project/gofe/data"
 )
 
@@ -22,7 +23,7 @@ LSSSRecon 实现秘密份额的重构。
 
 输出: 重构后的 GT 群元素
 */
-func LSSSRecon(msp *MSP, shares map[int]*bn256.GT, p *big.Int) (*bn256.GT, error) {
+func Recon(msp *abe.MSP, shares map[int]*bn256.GT, p *big.Int) (*bn256.GT, error) {
 	if len(shares) == 0 {
 		return nil, errors.New("no attributes satisfy the policy for reconstruction")
 	}
