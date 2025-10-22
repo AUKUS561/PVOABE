@@ -107,18 +107,19 @@ func (pvgss *PVGSS) KeyGen(pp *PublicParameter, attributeSet string) (*OSK, erro
 }
 
 type CipherText struct {
-	Ci      map[int]*bn256.G1
+	Ci      *bn256.G1
 	CiPrime *bn256.G1
 }
 
 // Ci, Ci'} ← PVGSS.Share(B, τ)
-func (pvgss *PVGSS) Share(pp *PublicParameter, b *bn256.G1, msp *abe.MSP) (*CipherText, error) {
+func (pvgss *PVGSS) Share(pp *PublicParameter, b *bn256.G1, msp *abe.MSP) (map[int]*CipherText, error) {
 	p := pp.Order
 	//生成一个随机秘密t，用于LSSS秘密分享
 	sampler := sample.NewUniformRange(big.NewInt(1), p)
 	t, _ := sampler.Sample()
 	// {lambda_i} <- LSSS.Share(s, τ)
 	lambdaI, _ := LSSS.Share(msp, t, p)
+	shares := make(map[int]*CipherText)
 	for i, lambda := range lambdaI {
 		bi := make(map[int]*bn256.G1)
 		bi[i] = new(bn256.G1).ScalarMult(b, lambda) //bi=b^lambdai
@@ -132,11 +133,10 @@ func (pvgss *PVGSS) Share(pp *PublicParameter, b *bn256.G1, msp *abe.MSP) (*Ciph
 		//pki^-ri
 		part := new(bn256.G1).ScalarMult(pki, negRi)
 		//ci = bi*pki^-ri
-		ci := make(map[int]*bn256.G1)
-		ci[i] = new(bn256.G1).Add(pki, part)
+		ci := new(bn256.G1).Add(pki, part)
 		//ci'=g^ri
 		ciprime := new(bn256.G1).ScalarBaseMult(ri)
-		shares[i] := &CipherText{Ci: ci, CiPrime: ciprime}
+		shares[i] = &CipherText{Ci: ci, CiPrime: ciprime}
 	}
 	return shares, nil
 }

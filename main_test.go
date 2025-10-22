@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/fentec-project/bn256"
+	"github.com/fentec-project/gofe/abe"
+	"github.com/fentec-project/gofe/sample"
 	"github.com/stretchr/testify/require"
 )
 
@@ -64,5 +67,29 @@ func TestKeyGen(t *testing.T) {
 	t.Logf("OSK.KXs count = %d", len(osk.KXs))
 	for attr, kx := range osk.KXs {
 		t.Logf("KX attr=%s, kx=%v", attr, kx)
+	}
+}
+
+func TestShare(t *testing.T) {
+	//Setup
+	pvgss := NewPVGSS()
+	attrs := "清华 北大 海南大学 硕士 博士 教授"
+	pp, _, err := pvgss.Setup(attrs)
+	require.NoError(t, err)
+	require.NotNil(t, pp)
+	//s<-Zp
+	sampler := sample.NewUniformRange(big.NewInt(1), pp.Order)
+	s, _ := sampler.Sample()
+	B := new(bn256.G1).ScalarMult(pp.Pk, s) //B=pk^s
+	policy := "教授 AND (海南大学 OR 博士)"
+	msp, _ := abe.BooleanToMSP(policy, false)
+	shareResult, err := pvgss.Share(pp, B, msp)
+	if err != nil {
+		t.Errorf("fail to generate shares:%v", err)
+		return
+	}
+	for i, v := range shareResult {
+		t.Logf("C_%d=%v", i, v.Ci)
+		t.Logf("C_%d'=%v", i, v.CiPrime)
 	}
 }
