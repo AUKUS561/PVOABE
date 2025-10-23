@@ -11,6 +11,7 @@ import (
 	"github.com/fentec-project/bn256"
 	"github.com/fentec-project/gofe/abe"
 	"github.com/fentec-project/gofe/sample"
+	//"github.com/AppCrypto/deTTP/crypto/dleq"
 )
 
 type PublicParameter struct {
@@ -116,7 +117,6 @@ type CipherText struct {
 func (pvgss *PVGSS) Share(pp *PublicParameter, b *bn256.G1, msp *abe.MSP) (map[int]*CipherText, error) {
 	p := pp.Order
 	sampler := sample.NewUniformRange(big.NewInt(1), p)
-	//s, _ := sampler.Sample() // 生成随机秘密 s
 	// {lambda_i} <- LSSS.Share(s, τ)
 	lambdaI, _ := LSSS.Share(msp, big.NewInt(1), p)
 	shares := make(map[int]*CipherText)
@@ -157,13 +157,12 @@ func (pvgss *PVGSS) SVerify(pp *PublicParameter, ct map[int]*CipherText, cprime 
 	left, _ := LSSS.Recon(msp, Ais, p)
 	right := bn256.Pair(pp.Pk, cprime)
 
-	// for i, v := range Ais {
-	// 	fmt.Printf("Ais[%d] = %v\n", i, v)
-	// }
-	// fmt.Printf("Recon result: %v\n", left)
-	// fmt.Printf("Pairing result: %v\n", right)
-
 	return left.String() == right.String()
+}
+
+// (R, π) ← PVGSS.Recon({Ci, Ci'}, τ, OSK, sk)
+func (pvgss *PVGSS) Recon(ct map[int]*CipherText, msp *abe.MSP, osk *OSK, sk *SecretKey) (R *bn256.GT) {
+
 }
 
 // HashToG1函数实现将一个属性x映射到G1群上的一个点

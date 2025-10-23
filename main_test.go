@@ -104,8 +104,8 @@ func TestSVerify(t *testing.T) {
 	//s<-Zp
 	sampler := sample.NewUniformRange(big.NewInt(1), pp.Order)
 	s, _ := sampler.Sample()
-	B := new(bn256.G1).ScalarMult(pp.Pk, s) //B=pk^s
-	Cprime := new(bn256.G2).ScalarBaseMult(s)
+	B := new(bn256.G1).ScalarMult(pp.Pk, s)   //B=pk^s
+	Cprime := new(bn256.G2).ScalarBaseMult(s) //C'
 	policy := "教授 AND (海南大学 OR 博士)"
 	msp, _ := abe.BooleanToMSP(policy, false)
 	shareResult, err := pvgss.Share(pp, B, msp)
