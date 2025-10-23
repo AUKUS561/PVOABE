@@ -107,22 +107,22 @@ func (pvgss *PVGSS) KeyGen(pp *PublicParameter, attributeSet string) (*OSK, erro
 }
 
 type CipherText struct {
-	Ci      *bn256.G1
-	CiPrime *bn256.G1
+	Ci       *bn256.G1
+	CiPrime  *bn256.G1
+	CiPrime2 *bn256.G2 //ciprime2专门用于配对
 }
 
 // Ci, Ci'} ← PVGSS.Share(B, τ)
 func (pvgss *PVGSS) Share(pp *PublicParameter, b *bn256.G1, msp *abe.MSP) (map[int]*CipherText, error) {
 	p := pp.Order
-	//生成一个随机秘密t，用于LSSS秘密分享
 	sampler := sample.NewUniformRange(big.NewInt(1), p)
-	t, _ := sampler.Sample()
+	//s, _ := sampler.Sample() // 生成随机秘密 s
 	// {lambda_i} <- LSSS.Share(s, τ)
-	lambdaI, _ := LSSS.Share(msp, t, p)
+	lambdaI, _ := LSSS.Share(msp, big.NewInt(1), p)
 	shares := make(map[int]*CipherText)
 	for i, lambda := range lambdaI {
-		bi := make(map[int]*bn256.G1)
-		bi[i] = new(bn256.G1).ScalarMult(b, lambda) //bi=b^lambdai
+		//bi=b^lambdai
+		bi := new(bn256.G1).ScalarMult(b, lambda)
 		//ri<-Zp
 		ri, _ := sampler.Sample()
 		attri := msp.RowToAttrib[i]
@@ -133,12 +133,37 @@ func (pvgss *PVGSS) Share(pp *PublicParameter, b *bn256.G1, msp *abe.MSP) (map[i
 		//pki^-ri
 		part := new(bn256.G1).ScalarMult(pki, negRi)
 		//ci = bi*pki^-ri
-		ci := new(bn256.G1).Add(pki, part)
+		ci := new(bn256.G1).Add(bi, part)
 		//ci'=g^ri
 		ciprime := new(bn256.G1).ScalarBaseMult(ri)
-		shares[i] = &CipherText{Ci: ci, CiPrime: ciprime}
+		ciprime2 := new(bn256.G2).ScalarBaseMult(ri)
+		shares[i] = &CipherText{Ci: ci, CiPrime: ciprime, CiPrime2: ciprime2}
 	}
 	return shares, nil
+}
+
+// 0/1 ← PVGSS.SVerify({Ci, Ci'}, C', τ )
+func (pvgss *PVGSS) SVerify(pp *PublicParameter, ct map[int]*CipherText, cprime *bn256.G2, msp *abe.MSP) bool {
+	p := pp.Order
+	//∀i ∈ [1, l] : Ai = e(Ci, g)e(pkρ(i), Ci')
+	g2 := new(bn256.G2).ScalarBaseMult(big.NewInt(1)) //生成一个G2生成元g2专门用于配对
+	Ais := make(map[int]*bn256.GT)
+	for i, v := range ct {
+		part1 := bn256.Pair(v.Ci, g2)
+		part2 := bn256.Pair(pp.PkXs[msp.RowToAttrib[i]], v.CiPrime2)
+		Ais[i] = new(bn256.GT).Add(part1, part2)
+	}
+	//验证LSSS.Recon({Ai}i∈[1,l], τ ) ?= e(pk, C′)
+	left, _ := LSSS.Recon(msp, Ais, p)
+	right := bn256.Pair(pp.Pk, cprime)
+
+	// for i, v := range Ais {
+	// 	fmt.Printf("Ais[%d] = %v\n", i, v)
+	// }
+	// fmt.Printf("Recon result: %v\n", left)
+	// fmt.Printf("Pairing result: %v\n", right)
+
+	return left.String() == right.String()
 }
 
 // HashToG1函数实现将一个属性x映射到G1群上的一个点

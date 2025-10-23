@@ -93,3 +93,29 @@ func TestShare(t *testing.T) {
 		t.Logf("C_%d'=%v", i, v.CiPrime)
 	}
 }
+
+func TestSVerify(t *testing.T) {
+	//Setup
+	pvgss := NewPVGSS()
+	attrs := "清华 北大 海南大学 硕士 博士 教授"
+	pp, _, err := pvgss.Setup(attrs)
+	require.NoError(t, err)
+	require.NotNil(t, pp)
+	//s<-Zp
+	sampler := sample.NewUniformRange(big.NewInt(1), pp.Order)
+	s, _ := sampler.Sample()
+	B := new(bn256.G1).ScalarMult(pp.Pk, s) //B=pk^s
+	Cprime := new(bn256.G2).ScalarBaseMult(s)
+	policy := "教授 AND (海南大学 OR 博士)"
+	msp, _ := abe.BooleanToMSP(policy, false)
+	shareResult, err := pvgss.Share(pp, B, msp)
+	if err != nil {
+		t.Errorf("fail to generate shares:%v", err)
+		return
+	}
+
+	result := pvgss.SVerify(pp, shareResult, Cprime, msp)
+	t.Logf("SVerify Result: %v", result)
+	require.True(t, result, "SVerify should return true for valid inputs")
+
+}

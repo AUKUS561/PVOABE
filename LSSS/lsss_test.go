@@ -20,14 +20,14 @@ func TestLSSSCompleteFlow(t *testing.T) {
 	p := bn256.Order // 使用bn256曲线的阶作为域的阶
 
 	// 2. 测试 LSSSShare：生成秘密份额
-	secret := big.NewInt(42) // 要共享的秘密
-	shareResult, err := Share(msp, secret, p)
+	secret := big.NewInt(1) // 要共享的秘密
+	lambda, err := Share(msp, secret, p)
 	require.NoError(t, err, "生成份额时出错")
-	require.NotNil(t, shareResult, "份额结果不应为nil")
+	require.NotNil(t, lambda, "份额结果不应为nil")
 
 	// 打印生成的份额
 	t.Log("生成的份额 λi:")
-	for i, lambda := range shareResult {
+	for i, lambda := range lambda {
 		t.Logf("λ_%d = %s", i, lambda.String())
 	}
 
@@ -36,15 +36,18 @@ func TestLSSSCompleteFlow(t *testing.T) {
 	shares := make(map[int]*bn256.GT)
 	g := new(bn256.GT).ScalarBaseMult(big.NewInt(1)) // 生成GT群的生成元
 
+	for i, v := range lambda {
+		shares[i] = new(bn256.GT).ScalarMult(g, v)
+	}
 	// 选择满足策略的属性集合的份额
 	// 这里我们选择 attr1 和 attr2 (前两行的份额)
-	for i := 0; i < 2; i++ {
-		if lambda, exists := shareResult[i]; exists {
-			// 先对lambda做模p，保证与重构时一致
-			lambdaMod := new(big.Int).Mod(lambda, p)
-			shares[i] = new(bn256.GT).ScalarMult(g, lambdaMod)
-		}
-	}
+	// for i := 0; i < 2; i++ {
+	// 	if lambda, exists := shareResult[i]; exists {
+	// 		// 先对lambda做模p，保证与重构时一致
+	// 		lambdaMod := new(big.Int).Mod(lambda, p)
+	// 		shares[i] = new(bn256.GT).ScalarMult(g, lambdaMod)
+	// 	}
+	// }
 
 	// 4. 测试 LSSSRecon：重构秘密
 	reconstructed, err := Recon(msp, shares, p)
