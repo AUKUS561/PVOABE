@@ -3,10 +3,13 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
+	"log"
 	"math/big"
 	"strings"
 
 	//"github.com/ethereum/go-ethereum/crypto/bn256"
+
+	"github.com/AUKUS561/PVOABE/DLEQ"
 	"github.com/AUKUS561/PVOABE/LSSS"
 	"github.com/fentec-project/bn256"
 	"github.com/fentec-project/gofe/abe"
@@ -161,8 +164,62 @@ func (pvgss *PVGSS) SVerify(pp *PublicParameter, ct map[int]*CipherText, cprime 
 }
 
 // (R, π) ← PVGSS.Recon({Ci, Ci'}, τ, OSK, sk)
-func (pvgss *PVGSS) Recon(ct map[int]*CipherText, msp *abe.MSP, osk *OSK, sk *SecretKey) (R *bn256.GT) {
+func (pvgss *PVGSS) Recon(pp *PublicParameter, ct map[int]*CipherText, msp *abe.MSP, osk *OSK, sk *SecretKey) (*bn256.GT, *DLEQ.Prfs, error) {
+	p := pp.Order
+	riPrime := make(map[int]*bn256.GT)
 
+	//I = {i : ρ(i) ∈ Su}
+	//遍历Kx（对应用户属性集）的属性索引i，同时遍历策略矩阵msp每一行对应的属性v，若i=v
+	//则找到这一行的密文ci与ci'，执行∀i ∈ I : Ri~ = e(Ci, L)e(Ci', Kρ(i))
+	for i, _ := range osk.KXs {
+		for j, v := range msp.RowToAttrib {
+			if i == v {
+				g2 := new(bn256.G2).ScalarBaseMult(big.NewInt(1))
+				left := bn256.Pair(ct[j].Ci, g2)
+				right := bn256.Pair(osk.KXs[i], ct[j].CiPrime2)
+				riPrime[j] = new(bn256.GT).Add(left, right)
+			}
+		}
+	}
+	//R ← LSSS.Recon({ ˜Ri}i∈I , τ )
+	rPrime, err := LSSS.Recon(msp, riPrime, p)
+	if err != nil {
+		log.Fatalf("Fail to execute LSSSRecon ,Error: %v", err)
+	}
+	//R = ˜R^1/sk
+	skInv := new(big.Int).ModInverse(sk.A, p)
+	r := new(bn256.GT).ScalarMult(rPrime, skInv)
+	//π ← DLEQ.Proof(sk, R, ˜R, h, pk)
+	pi, err := DLEQ.Proof(sk.A, r, rPrime, pp.H, pp.Pk)
+	if err != nil {
+		log.Fatalf("fail to generate proof")
+	}
+	return r, pi, nil
+}
+
+func (pvgss *PVGSS) DVerify(pp *PublicParameter, ct map[int]*CipherText, msp *abe.MSP, osk *OSK, R *bn256.GT, proof *DLEQ.Prfs) bool {
+	p := pp.Order
+	riPrime := make(map[int]*bn256.GT)
+
+	//I = {i : ρ(i) ∈ Su}
+	//遍历Kx（对应用户属性集）的属性索引i，同时遍历策略矩阵msp每一行对应的属性v，若i=v
+	//则找到这一行的密文ci与ci'，执行∀i ∈ I : Ri~ = e(Ci, L)e(Ci', Kρ(i))
+	for i, _ := range osk.KXs {
+		for j, v := range msp.RowToAttrib {
+			if i == v {
+				g2 := new(bn256.G2).ScalarBaseMult(big.NewInt(1))
+				left := bn256.Pair(ct[j].Ci, g2)
+				right := bn256.Pair(osk.KXs[i], ct[j].CiPrime2)
+				riPrime[j] = new(bn256.GT).Add(left, right)
+			}
+		}
+	}
+	//R ← LSSS.Recon({ ˜Ri}i∈I , τ )
+	rPrime, err := LSSS.Recon(msp, riPrime, p)
+	if err != nil {
+		log.Fatalf("Error: %v", err)
+	}
+	return DLEQ.Verify(proof, R, rPrime, pp.H, pp.Pk)
 }
 
 // HashToG1函数实现将一个属性x映射到G1群上的一个点

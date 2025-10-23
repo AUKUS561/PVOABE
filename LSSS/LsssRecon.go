@@ -30,9 +30,9 @@ func Recon(msp *abe.MSP, shares map[int]*bn256.GT, p *big.Int) (*bn256.GT, error
 	// 1. 识别满足策略的行 I 并构建子矩阵 MI
 	// 从 shares 中提取出对应的 LSSS 矩阵行，构成子矩阵 MI
 	// SubMatrix初始化MI
-	SubMatrix := make(data.Matrix, 0, len(shares))
+	SubMatrix := make(data.Matrix, 0, len(shares)-1)
 	// indices 存储原始 LSSS 矩阵的行索引，以便与 shares 对应
-	indices := make([]int, 0, len(shares))
+	indices := make([]int, 0, len(shares)-1)
 
 	for i := range shares {
 		// 确保行 i 存在于 MSP 矩阵中

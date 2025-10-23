@@ -119,3 +119,53 @@ func TestSVerify(t *testing.T) {
 	require.True(t, result, "SVerify should return true for valid inputs")
 
 }
+
+func TestAll(t *testing.T) {
+	//Setup
+	pvgss := NewPVGSS()
+	attrs := "清华 北大 海南大学 硕士 博士 教授"
+	pp, sk, err := pvgss.Setup(attrs)
+	require.NoError(t, err)
+	require.NotNil(t, pp)
+	require.NotNil(t, sk)
+
+	//选择用户属性集Su
+	userAttrs := "海南大学 博士"
+	//KeyGen
+	osk, err := pvgss.KeyGen(pp, userAttrs)
+	require.NoError(t, err)
+	require.NotNil(t, osk)
+	// 打印 OSK 的所有参数
+	t.Logf("OSK.L = %v", osk.L)
+	t.Logf("OSK.KXs count = %d", len(osk.KXs))
+	for attr, kx := range osk.KXs {
+		t.Logf("KX attr=%s, kx=%v", attr, kx)
+	}
+
+	//s<-Zp
+	sampler := sample.NewUniformRange(big.NewInt(1), pp.Order)
+	s, _ := sampler.Sample()
+	B := new(bn256.G1).ScalarMult(pp.Pk, s)   //B=pk^s
+	Cprime := new(bn256.G2).ScalarBaseMult(s) //C'
+	policy := "教授 OR (海南大学 AND 博士)"
+	msp, _ := abe.BooleanToMSP(policy, false)
+	//Share
+	shareResult, err := pvgss.Share(pp, B, msp)
+	if err != nil {
+		t.Errorf("fail to generate shares")
+		return
+	}
+	//Sverify
+	result := pvgss.SVerify(pp, shareResult, Cprime, msp)
+	t.Logf("SVerify Result: %v", result)
+	require.True(t, result, "SVerify should return true for valid inputs")
+	//Recon
+	R, proof, err := pvgss.Recon(pp, shareResult, msp, osk, sk)
+	if err != nil {
+		t.Errorf("fail to recon")
+		return
+	}
+	//DVerify
+	finalResult := pvgss.DVerify(pp, shareResult, msp, osk, R, proof)
+	t.Logf("final result :%v", finalResult)
+}

@@ -12,7 +12,7 @@ import (
 
 func TestLSSSCompleteFlow(t *testing.T) {
 	// 1. 首先测试 BooleanToMSP：创建一个简单的访问策略
-	policy := "attr1 AND (attr2 OR attr3)"
+	policy := "博士 OR (海南大学 AND 硕士)"
 	msp, err := abe.BooleanToMSP(policy, false)
 	require.NoError(t, err, "创建MSP时出错")
 	require.NotNil(t, msp, "MSP不应为nil")
@@ -36,18 +36,13 @@ func TestLSSSCompleteFlow(t *testing.T) {
 	shares := make(map[int]*bn256.GT)
 	g := new(bn256.GT).ScalarBaseMult(big.NewInt(1)) // 生成GT群的生成元
 
-	for i, v := range lambda {
-		shares[i] = new(bn256.GT).ScalarMult(g, v)
-	}
 	// 选择满足策略的属性集合的份额
-	// 这里我们选择 attr1 和 attr2 (前两行的份额)
-	// for i := 0; i < 2; i++ {
-	// 	if lambda, exists := shareResult[i]; exists {
-	// 		// 先对lambda做模p，保证与重构时一致
-	// 		lambdaMod := new(big.Int).Mod(lambda, p)
-	// 		shares[i] = new(bn256.GT).ScalarMult(g, lambdaMod)
-	// 	}
-	// }
+	// 这里我们选择 海南大学 和 博士 (后两行的份额)
+	for i := 1; i <= 2; i++ {
+		if lambdaI, exists := lambda[i]; exists {
+			shares[i] = new(bn256.GT).ScalarMult(g, lambdaI)
+		}
+	}
 
 	// 4. 测试 LSSSRecon：重构秘密
 	reconstructed, err := Recon(msp, shares, p)
