@@ -26,18 +26,13 @@ type PublicKey struct {
 	Base *bn256.GT //e(g,g)^alpha
 }
 
-func (pvoabe *PVOABE) Setup() (mk *big.Int, pk *PublicKey, sk *PVGSS.SecretKey, error) {
-	PP,sk,err:=PVGSS.NewPVGSS().Setup("清华 北大 海南大学 博士 硕士 教授")
-	if err!=nil{
-		return nil ,err
-	}
-	sampler:=sample.NewUniformRange(big.NewInt(1),pvoabe.P)
-	alpha,_:=sampler.Sample()
+func (pvoabe *PVOABE) Setup() (*big.Int, *PublicKey, *PVGSS.SecretKey, error) {
+	PP, sk, _ := PVGSS.NewPVGSS().Setup("清华 北大 海南大学 博士 硕士 教授")
+	sampler := sample.NewUniformRange(big.NewInt(1), pvoabe.P)
+	alpha, _ := sampler.Sample()
 	g1 := new(bn256.G1).ScalarBaseMult(big.NewInt(1))
 	g2 := new(bn256.G2).ScalarBaseMult(big.NewInt(1))
-	res :=bn256.Pair(g1,g2)//e(g,g)
-	base :=new(bn256.GT).ScalarMult(res,alpha)//e(g,g)^alpha
-	return alpha,&PublicKey{PP: PP,Base: base},sk.A
+	res := bn256.Pair(g1, g2)                    //e(g,g)
+	base := new(bn256.GT).ScalarMult(res, alpha) //e(g,g)^alpha
+	return alpha, &PublicKey{PP: PP, Base: base}, sk, nil
 }
-
-

@@ -1,4 +1,4 @@
-package main
+package PVGSS
 
 import (
 	"math/big"
