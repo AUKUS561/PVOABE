@@ -123,26 +123,20 @@ func TestSVerify(t *testing.T) {
 func TestAll(t *testing.T) {
 	//Setup
 	pvgss := NewPVGSS()
+	//属性全集U
 	attrs := "清华 北大 海南大学 硕士 博士 教授"
+	//Setup生成pp，sk
 	pp, sk, err := pvgss.Setup(attrs)
 	require.NoError(t, err)
 	require.NotNil(t, pp)
 	require.NotNil(t, sk)
-
 	//选择用户属性集Su
 	userAttrs := "海南大学 博士"
 	//KeyGen
 	osk, err := pvgss.KeyGen(pp, userAttrs)
 	require.NoError(t, err)
 	require.NotNil(t, osk)
-	// 打印 OSK 的所有参数
-	t.Logf("OSK.L = %v", osk.L)
-	t.Logf("OSK.KXs count = %d", len(osk.KXs))
-	for attr, kx := range osk.KXs {
-		t.Logf("KX attr=%s, kx=%v", attr, kx)
-	}
-
-	//s<-Zp
+	//s<-Zp,计算B,C',指定访问控制策略，并生成msp矩阵
 	sampler := sample.NewUniformRange(big.NewInt(1), pp.Order)
 	s, _ := sampler.Sample()
 	B := new(bn256.G1).ScalarMult(pp.Pk, s)   //B=pk^s
@@ -167,5 +161,5 @@ func TestAll(t *testing.T) {
 	}
 	//DVerify
 	finalResult := pvgss.DVerify(pp, shareResult, msp, osk, R, proof)
-	t.Logf("final result :%v", finalResult)
+	t.Logf("DVerify Result :%v", finalResult)
 }
