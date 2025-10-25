@@ -1,11 +1,18 @@
 package main
 
 import (
+	"crypto/aes"
+	cbc "crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
+	"fmt"
+	"io"
 	"math/big"
 
+	"github.com/AUKUS561/PVOABE/DLEQ"
 	"github.com/AUKUS561/PVOABE/PVGSS"
-	//"github.com/ethereum/go-ethereum/tests/fuzzers/bn256"
 	"github.com/fentec-project/bn256"
+	"github.com/fentec-project/gofe/abe"
 	"github.com/fentec-project/gofe/sample"
 )
 
@@ -35,4 +42,154 @@ func (pvoabe *PVOABE) Setup() (*big.Int, *PublicKey, *PVGSS.SecretKey, error) {
 	res := bn256.Pair(g1, g2)                    //e(g,g)
 	base := new(bn256.GT).ScalarMult(res, alpha) //e(g,g)^alpha
 	return alpha, &PublicKey{PP: PP, Base: base}, sk, nil
+}
+
+func (pvoabe *PVOABE) KeyGen(pk *PublicKey, mk *big.Int, su string) (*PVGSS.OSK, *bn256.G1, error) {
+	OSK, _ := PVGSS.NewPVGSS().KeyGen(pk.PP, su)
+	//DSK=g^alpha g^t
+	part1 := new(bn256.G1).ScalarBaseMult(mk)
+	DSK := new(bn256.G1).Add(part1, OSK.Lprime)
+	return OSK, DSK, nil
+}
+
+type CipherText struct {
+	C      *bn256.GT
+	Cprime *bn256.G2
+	B      *bn256.G1
+	Msp    *abe.MSP
+	symEnc []byte
+	iv     []byte
+}
+
+func (pvoabe *PVOABE) Encrypt(pk *PublicKey, msg string) (*CipherText, error) {
+
+	//s<-Zp,计算B,C',指定访问控制策略，并生成msp矩阵
+	sampler := sample.NewUniformRange(big.NewInt(1), pk.PP.Order)
+	s, _ := sampler.Sample()
+	B := new(bn256.G1).ScalarMult(pk.PP.Pk, s)      //B=pk^s
+	Cprime := new(bn256.G2).ScalarBaseMult(s)       //C'
+	abeTerm := new(bn256.GT).ScalarMult(pk.Base, s) //e(g,g)^alpha s
+	policy := "教授 OR (海南大学 AND 博士)"
+	msp, _ := abe.BooleanToMSP(policy, false)
+
+	_, keyGt, err := bn256.RandomGT(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+
+	keyCBC := sha256.Sum256([]byte(keyGt.String()))
+
+	c, err := aes.NewCipher(keyCBC[:])
+	if err != nil {
+		return nil, err
+	}
+
+	iv := make([]byte, c.BlockSize())
+	_, err = io.ReadFull(rand.Reader, iv)
+	if err != nil {
+		return nil, err
+	}
+	encrypterCBC := cbc.NewCBCEncrypter(c, iv)
+
+	msgByte := []byte(msg)
+
+	// message is padded according to pkcs7 standard
+	padLen := c.BlockSize() - (len(msgByte) % c.BlockSize())
+	msgPad := make([]byte, len(msgByte)+padLen)
+	copy(msgPad, msgByte)
+	for i := len(msgByte); i < len(msgPad); i++ {
+		msgPad[i] = byte(padLen)
+	}
+
+	symEnc := make([]byte, len(msgPad))
+	encrypterCBC.CryptBlocks(symEnc, msgPad)
+	C := new(bn256.GT).Add(keyGt, abeTerm) //C = m · e(g, g)αs
+
+	fmt.Printf("keyGT : %v\n", keyGt)
+	fmt.Printf("abeTerm (e(g,g)^as) : %v\n", abeTerm)
+	fmt.Printf("C: %v\n", C)
+
+	return &CipherText{
+		C:      C,
+		Cprime: Cprime,
+		B:      B,
+		Msp:    msp,
+		symEnc: symEnc,
+		iv:     iv,
+	}, nil
+}
+
+func (pvoabe *PVOABE) OEnc(pk *PublicKey, B *bn256.G1, msp *abe.MSP) (map[int]*PVGSS.CipherText, error) {
+	ct := make(map[int]*PVGSS.CipherText)
+	ct, err := PVGSS.NewPVGSS().Share(pk.PP, B, msp)
+	if err != nil {
+		return nil, err
+	}
+	return ct, nil
+}
+
+func (pvoabe *PVOABE) OEncVer(pk *PublicKey, ct map[int]*PVGSS.CipherText, Cprime *bn256.G2, msp *abe.MSP) bool {
+	return PVGSS.NewPVGSS().SVerify(pk.PP, ct, Cprime, msp)
+}
+
+func (pvoabe *PVOABE) ODec(pk *PublicKey, ct map[int]*PVGSS.CipherText, msp *abe.MSP, OSK *PVGSS.OSK, sk *PVGSS.SecretKey) (*bn256.GT, *DLEQ.Prfs, error) {
+	R, Proof, err := PVGSS.NewPVGSS().Recon(pk.PP, ct, msp, OSK, sk)
+	if err != nil {
+		return nil, nil, err
+	}
+	return R, Proof, nil
+}
+
+func (pvoabe *PVOABE) ODecVer(pk *PublicKey, ct map[int]*PVGSS.CipherText, msp *abe.MSP, OSK *PVGSS.OSK, R *bn256.GT, Proof *DLEQ.Prfs) bool {
+	return PVGSS.NewPVGSS().DVerify(pk.PP, ct, msp, OSK, R, Proof)
+}
+
+func (pvoabe *PVOABE) Dec(CT *CipherText, DSK *bn256.G1, R *bn256.GT) (string, error) {
+	if CT.C == nil || DSK == nil || R == nil {
+		return "", fmt.Errorf("nil input")
+	}
+
+	// T = e(DSK, C') - R = e(g^α·g^t, g^s) - e(g,g)^(ts) = e(g,g)^(αs)
+	pairTerm := bn256.Pair(DSK, CT.Cprime)
+	T := new(bn256.GT).Add(pairTerm, R.Neg(R))
+
+	// keyGt = C - T = (keyGT + e(g,g)^(αs)) - e(g,g)^(αs) = keyGT
+	keyGt := new(bn256.GT).Add(CT.C, T.Neg(T))
+
+	fmt.Printf("keyGt : %v\n", keyGt)
+	fmt.Printf("R from ODec : %v\n", R)
+	fmt.Printf("T pair term : %v\n", bn256.Pair(DSK, CT.Cprime)) // 预期值: e(g,g)^(alpha s) * e(g,g)^(t s)
+	fmt.Printf("T calculated : %v\n", T)                         // 预期值: e(g,g)^(alpha s)
+	fmt.Printf("C: %v", CT.C)
+
+	// 2) 从 keyGt 导出 AES key（与Encrypt 中一致）
+	keyCBC := sha256.Sum256([]byte(keyGt.String()))
+	c, err := aes.NewCipher(keyCBC[:])
+	if err != nil {
+		return "", err
+	}
+
+	// 3) 解密 AES-CBC 得到明文并去 PKCS7 填充
+	if len(CT.iv) != c.BlockSize() {
+		return "", fmt.Errorf("invalid IV length")
+	}
+	if len(CT.symEnc)%c.BlockSize() != 0 {
+		return "", fmt.Errorf("invalid symEnc length")
+	}
+
+	msgPad := make([]byte, len(CT.symEnc))
+	decrypter := cbc.NewCBCDecrypter(c, CT.iv)
+	decrypter.CryptBlocks(msgPad, CT.symEnc)
+
+	// unpad PKCS7
+	padLen := int(msgPad[len(msgPad)-1])
+	if padLen <= 0 || padLen > c.BlockSize() {
+		return "", fmt.Errorf("invalid padding")
+	}
+	if len(msgPad)-padLen < 0 {
+		return "", fmt.Errorf("invalid padding/length")
+	}
+	msg := msgPad[:len(msgPad)-padLen]
+
+	return string(msg), nil
 }

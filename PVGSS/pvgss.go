@@ -1,4 +1,4 @@
-package main
+package PVGSS
 
 import (
 	"crypto/sha256"
@@ -81,8 +81,9 @@ func (pvgss *PVGSS) Setup(attributeUniverse string) (*PublicParameter, *SecretKe
 }
 
 type OSK struct {
-	L   *bn256.G1
-	KXs map[string]*bn256.G1
+	L      *bn256.G2
+	KXs    map[string]*bn256.G1
+	Lprime *bn256.G1
 }
 
 // OSK ← PVGSS.KeyGen(Su)
@@ -92,7 +93,8 @@ func (pvgss *PVGSS) KeyGen(pp *PublicParameter, attributeSet string) (*OSK, erro
 	//t←Zp,L=g^t
 	sampler := sample.NewUniformRange(big.NewInt(1), p)
 	t, _ := sampler.Sample()
-	l := new(bn256.G1).ScalarBaseMult(t) //L=g^t
+	l := new(bn256.G2).ScalarBaseMult(t) //L=g^t
+	lprime := new(bn256.G1).ScalarBaseMult(t)
 	//{Kx = pkx^t}x∈Su
 	kxs := make(map[string]*bn256.G1)
 	//1.从用户属性集合attributeSet中分割出单个属性
@@ -107,7 +109,7 @@ func (pvgss *PVGSS) KeyGen(pp *PublicParameter, attributeSet string) (*OSK, erro
 		kxs[x] = new(bn256.G1).ScalarMult(pp.PkXs[x], t)
 	}
 
-	return &OSK{L: l, KXs: kxs}, nil
+	return &OSK{L: l, KXs: kxs, Lprime: lprime}, nil
 }
 
 type CipherText struct {
@@ -174,8 +176,7 @@ func (pvgss *PVGSS) Recon(pp *PublicParameter, ct map[int]*CipherText, msp *abe.
 	for i, _ := range osk.KXs {
 		for j, v := range msp.RowToAttrib {
 			if i == v {
-				g2 := new(bn256.G2).ScalarBaseMult(big.NewInt(1))
-				left := bn256.Pair(ct[j].Ci, g2)
+				left := bn256.Pair(ct[j].Ci, osk.L)
 				right := bn256.Pair(osk.KXs[i], ct[j].CiPrime2)
 				riPrime[j] = new(bn256.GT).Add(left, right)
 			}
@@ -207,8 +208,7 @@ func (pvgss *PVGSS) DVerify(pp *PublicParameter, ct map[int]*CipherText, msp *ab
 	for i, _ := range osk.KXs {
 		for j, v := range msp.RowToAttrib {
 			if i == v {
-				g2 := new(bn256.G2).ScalarBaseMult(big.NewInt(1))
-				left := bn256.Pair(ct[j].Ci, g2)
+				left := bn256.Pair(ct[j].Ci, osk.L)
 				right := bn256.Pair(osk.KXs[i], ct[j].CiPrime2)
 				riPrime[j] = new(bn256.GT).Add(left, right)
 			}
