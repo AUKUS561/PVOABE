@@ -84,6 +84,7 @@ type OSK struct {
 	L      *bn256.G2
 	KXs    map[string]*bn256.G1
 	Lprime *bn256.G1
+	Ht     *bn256.G1
 }
 
 // OSK ← PVGSS.KeyGen(Su)
@@ -95,6 +96,7 @@ func (pvgss *PVGSS) KeyGen(pp *PublicParameter, attributeSet string) (*OSK, erro
 	t, _ := sampler.Sample()
 	l := new(bn256.G2).ScalarBaseMult(t) //L=g^t
 	lprime := new(bn256.G1).ScalarBaseMult(t)
+	ht := new(bn256.G1).ScalarMult(pp.H, t)
 	//{Kx = pkx^t}x∈Su
 	kxs := make(map[string]*bn256.G1)
 	//1.从用户属性集合attributeSet中分割出单个属性
@@ -109,7 +111,7 @@ func (pvgss *PVGSS) KeyGen(pp *PublicParameter, attributeSet string) (*OSK, erro
 		kxs[x] = new(bn256.G1).ScalarMult(pp.PkXs[x], t)
 	}
 
-	return &OSK{L: l, KXs: kxs, Lprime: lprime}, nil
+	return &OSK{L: l, KXs: kxs, Lprime: lprime, Ht: ht}, nil
 }
 
 type CipherText struct {

@@ -26,7 +26,7 @@ func TestMainFlow(t *testing.T) {
 
 	// 测试 Encrypt
 	message := "Hello, PVOABE!"
-	ct, err := pvoabe.Encrypt(pk, message)
+	ct, err := pvoabe.Enc(pk, message)
 	require.NotNil(t, ct, "Ciphertext should not be nil")
 
 	//测试OEnc
@@ -37,7 +37,6 @@ func TestMainFlow(t *testing.T) {
 
 	//测试ODec
 	R, Proof, err := pvoabe.ODec(pk, shares, ct.Msp, osk, sk)
-	t.Logf("R from ODec: %v", R)
 
 	//测试ODecVer
 	t.Logf("ODecVer Result : %v", pvoabe.ODecVer(pk, shares, ct.Msp, osk, R, Proof))

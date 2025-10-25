@@ -46,9 +46,10 @@ func (pvoabe *PVOABE) Setup() (*big.Int, *PublicKey, *PVGSS.SecretKey, error) {
 
 func (pvoabe *PVOABE) KeyGen(pk *PublicKey, mk *big.Int, su string) (*PVGSS.OSK, *bn256.G1, error) {
 	OSK, _ := PVGSS.NewPVGSS().KeyGen(pk.PP, su)
-	//DSK=g^alpha g^t
-	part1 := new(bn256.G1).ScalarBaseMult(mk)
-	DSK := new(bn256.G1).Add(part1, OSK.Lprime)
+	//DSK=g^alpha h^t
+	g1 := new(bn256.G1).ScalarBaseMult(big.NewInt(1))
+	part1 := new(bn256.G1).ScalarMult(g1, mk)
+	DSK := new(bn256.G1).Add(part1, OSK.Ht)
 	return OSK, DSK, nil
 }
 
@@ -61,7 +62,7 @@ type CipherText struct {
 	iv     []byte
 }
 
-func (pvoabe *PVOABE) Encrypt(pk *PublicKey, msg string) (*CipherText, error) {
+func (pvoabe *PVOABE) Enc(pk *PublicKey, msg string) (*CipherText, error) {
 
 	//s<-Zp,计算B,C',指定访问控制策略，并生成msp矩阵
 	sampler := sample.NewUniformRange(big.NewInt(1), pk.PP.Order)
@@ -103,11 +104,7 @@ func (pvoabe *PVOABE) Encrypt(pk *PublicKey, msg string) (*CipherText, error) {
 
 	symEnc := make([]byte, len(msgPad))
 	encrypterCBC.CryptBlocks(symEnc, msgPad)
-	C := new(bn256.GT).Add(keyGt, abeTerm) //C = m · e(g, g)αs
-
-	fmt.Printf("keyGT : %v\n", keyGt)
-	fmt.Printf("abeTerm (e(g,g)^as) : %v\n", abeTerm)
-	fmt.Printf("C: %v\n", C)
+	C := new(bn256.GT).Add(keyGt, abeTerm) //C = keyGt · e(h, g)αs
 
 	return &CipherText{
 		C:      C,
@@ -149,18 +146,22 @@ func (pvoabe *PVOABE) Dec(CT *CipherText, DSK *bn256.G1, R *bn256.GT) (string, e
 		return "", fmt.Errorf("nil input")
 	}
 
-	// T = e(DSK, C') - R = e(g^α·g^t, g^s) - e(g,g)^(ts) = e(g,g)^(αs)
-	pairTerm := bn256.Pair(DSK, CT.Cprime)
-	T := new(bn256.GT).Add(pairTerm, R.Neg(R))
+	// 详细调试信息
+	fmt.Printf("=== Detailed Decryption Analysis ===\n")
 
-	// keyGt = C - T = (keyGT + e(g,g)^(αs)) - e(g,g)^(αs) = keyGT
-	keyGt := new(bn256.GT).Add(CT.C, T.Neg(T))
+	// 计算 e(DSK, C')
+	pairDSKCprime := bn256.Pair(DSK, CT.Cprime)
+	T := new(bn256.GT).Set(pairDSKCprime)
 
-	fmt.Printf("keyGt : %v\n", keyGt)
-	fmt.Printf("R from ODec : %v\n", R)
-	fmt.Printf("T pair term : %v\n", bn256.Pair(DSK, CT.Cprime)) // 预期值: e(g,g)^(alpha s) * e(g,g)^(t s)
-	fmt.Printf("T calculated : %v\n", T)                         // 预期值: e(g,g)^(alpha s)
-	fmt.Printf("C: %v", CT.C)
+	// 计算 R 的逆元
+	RInv := new(bn256.GT).Neg(R)
+
+	// T = e(DSK, C') * R^(-1) = e(g,g)^(αs)
+	T = new(bn256.GT).Add(T, RInv)
+
+	// 现在计算 keyGT = C / T = C * T^(-1)
+	TInv := new(bn256.GT).Neg(T) // T 的逆元
+	keyGt := new(bn256.GT).Add(CT.C, TInv)
 
 	// 2) 从 keyGt 导出 AES key（与Encrypt 中一致）
 	keyCBC := sha256.Sum256([]byte(keyGt.String()))
