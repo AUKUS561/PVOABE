@@ -34,7 +34,10 @@ type PublicKey struct {
 }
 
 func (pvoabe *PVOABE) Setup() (*big.Int, *PublicKey, *PVGSS.SecretKey, error) {
-	PP, sk, _ := PVGSS.NewPVGSS().Setup("清华 北大 海南大学 博士 硕士 教授")
+	PP, sk, err := PVGSS.NewPVGSS().Setup("清华 北大 海南大学 博士 硕士 教授")
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	sampler := sample.NewUniformRange(big.NewInt(1), pvoabe.P)
 	alpha, _ := sampler.Sample()
 	g1 := new(bn256.G1).ScalarBaseMult(big.NewInt(1))
@@ -45,7 +48,10 @@ func (pvoabe *PVOABE) Setup() (*big.Int, *PublicKey, *PVGSS.SecretKey, error) {
 }
 
 func (pvoabe *PVOABE) KeyGen(pk *PublicKey, mk *big.Int, su string) (*PVGSS.OSK, *bn256.G1, error) {
-	OSK, _ := PVGSS.NewPVGSS().KeyGen(pk.PP, su)
+	OSK, err := PVGSS.NewPVGSS().KeyGen(pk.PP, su)
+	if err != nil {
+		return nil, nil, err
+	}
 	//DSK=g^alpha h^t
 	g1 := new(bn256.G1).ScalarBaseMult(big.NewInt(1))
 	part1 := new(bn256.G1).ScalarMult(g1, mk)
@@ -70,14 +76,16 @@ func (pvoabe *PVOABE) Enc(pk *PublicKey, msg string) (*CipherText, error) {
 	B := new(bn256.G1).ScalarMult(pk.PP.Pk, s)      //B=pk^s
 	Cprime := new(bn256.G2).ScalarBaseMult(s)       //C'
 	abeTerm := new(bn256.GT).ScalarMult(pk.Base, s) //e(g,g)^alpha s
+	//生成访问控制策略
 	policy := "教授 OR (海南大学 AND 博士)"
-	msp, _ := abe.BooleanToMSP(policy, false)
+	msp, _ := abe.BooleanToMSP(policy, false) //根据访问控制策略构建msp矩阵
 
+	//生成一个随机的GT元素作为对称密钥
 	_, keyGt, err := bn256.RandomGT(rand.Reader)
 	if err != nil {
 		return nil, err
 	}
-
+	//生成AES密钥
 	keyCBC := sha256.Sum256([]byte(keyGt.String()))
 
 	c, err := aes.NewCipher(keyCBC[:])
@@ -94,7 +102,7 @@ func (pvoabe *PVOABE) Enc(pk *PublicKey, msg string) (*CipherText, error) {
 
 	msgByte := []byte(msg)
 
-	// message is padded according to pkcs7 standard
+	// msg 按照 PKCS7 标准进行填充
 	padLen := c.BlockSize() - (len(msgByte) % c.BlockSize())
 	msgPad := make([]byte, len(msgByte)+padLen)
 	copy(msgPad, msgByte)
@@ -145,9 +153,6 @@ func (pvoabe *PVOABE) Dec(CT *CipherText, DSK *bn256.G1, R *bn256.GT) (string, e
 	if CT.C == nil || DSK == nil || R == nil {
 		return "", fmt.Errorf("nil input")
 	}
-
-	// 详细调试信息
-	fmt.Printf("=== Detailed Decryption Analysis ===\n")
 
 	// 计算 e(DSK, C')
 	pairDSKCprime := bn256.Pair(DSK, CT.Cprime)

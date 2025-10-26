@@ -84,7 +84,7 @@ type OSK struct {
 	L      *bn256.G2
 	KXs    map[string]*bn256.G1
 	Lprime *bn256.G1
-	Ht     *bn256.G1
+	Ht     *bn256.G1 //h^t 用于PVOABE
 }
 
 // OSK ← PVGSS.KeyGen(Su)

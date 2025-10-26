@@ -7,7 +7,7 @@ import (
 )
 
 func TestMainFlow(t *testing.T) {
-	// 初始化 PVOABE 实例
+	// 初始化 PVOABE
 	pvoabe := NewPVOABE()
 
 	// 测试 Setup
@@ -25,7 +25,7 @@ func TestMainFlow(t *testing.T) {
 	require.NotNil(t, dsk, "DSK should not be nil")
 
 	// 测试 Encrypt
-	message := "Hello, PVOABE!"
+	message := "Hello, PVOABE!" //生成要加密的msg
 	ct, err := pvoabe.Enc(pk, message)
 	require.NotNil(t, ct, "Ciphertext should not be nil")
 
