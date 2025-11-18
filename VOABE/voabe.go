@@ -1,4 +1,4 @@
-package main
+package VOABE
 
 import (
 	"crypto/aes"
