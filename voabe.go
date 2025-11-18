@@ -10,7 +10,6 @@ import (
 	"log"
 	"math/big"
 	"sort"
-	"strings"
 
 	"github.com/AUKUS561/PVOABE/LSSS"
 	"github.com/fentec-project/bn256"
@@ -29,17 +28,17 @@ func NewVOABE() *VOABE {
 }
 
 type pk struct {
-	Order *big.Int             //order
-	G     *bn256.G1            //g
-	G2    *bn256.G2            //g in G2 only for pairing
-	H     *bn256.G1            //h
-	W     *bn256.G1            //w
-	Base  *bn256.GT            //e(g,g)^alpha
-	Base1 *bn256.GT            //e(g,g)^alpha1
-	Ga    *bn256.G1            //g^a
-	Ga2   *bn256.G2            //only for pairing
-	Gb    *bn256.G1            //g^b
-	Hx    map[string]*bn256.G1 //Hx
+	Order *big.Int          //order
+	G     *bn256.G1         //g
+	G2    *bn256.G2         //g in G2 only for pairing
+	H     *bn256.G1         //h
+	W     *bn256.G1         //w
+	Base  *bn256.GT         //e(g,g)^alpha
+	Base1 *bn256.GT         //e(g,g)^alpha1
+	Ga    *bn256.G1         //g^a
+	Ga2   *bn256.G2         //only for pairing
+	Gb    *bn256.G1         //g^b
+	Hx    map[int]*bn256.G1 //Hx
 }
 
 type msk struct {
@@ -48,7 +47,7 @@ type msk struct {
 }
 
 // SetUp->pk,msk
-func (voabe *VOABE) SetUp(U string) (*pk, *msk) {
+func (voabe *VOABE) SetUp(U []string) (*pk, *msk) {
 	//α, α1, α2, a, b ∈ Z∗p
 	sampler := sample.NewUniformRange(big.NewInt(1), voabe.P)
 	alpha, _ := sampler.Sample()
@@ -72,11 +71,15 @@ func (voabe *VOABE) SetUp(U string) (*pk, *msk) {
 	//g^b
 	gb := new(bn256.G1).ScalarMult(g, b)
 	//Hx as a map which attribute as index and G1 elements as value
-	hx := make(map[string]*bn256.G1)
-	singleAtt := strings.Split(U, " ")
-	for _, v := range singleAtt {
-		x := HashToG1(v)
-		hx[v] = x
+	hx := make(map[int]*bn256.G1)
+	//singleAtt := strings.Split(U, " ")
+	// for _, v := range singleAtt {
+	// 	x := HashToG1(v)
+	// 	hx[v] = x
+	// }
+	for i := 0; i < len(U); i++ {
+		x := HashToG1(U[i])
+		hx[i] = x
 	}
 	return &pk{
 			Order: voabe.P,
@@ -112,8 +115,8 @@ type SKcs struct {
 	Lu2  *bn256.G2 //Only for paring
 	Ru   *bn256.G1
 	Ru2  *bn256.G2 //Only for pairing
-	Kux  map[string]*bn256.G1
-	Kux2 map[string]*bn256.G2 //Only for pairing
+	Kux  map[int]*bn256.G1
+	Kux2 map[int]*bn256.G2 //Only for pairing
 }
 
 type Sku struct {
@@ -128,9 +131,9 @@ func HashToBigInt(attribute string) *big.Int {
 	return z
 }
 
-func (voabe *VOABE) KeyGenU(pk *pk, msk *msk, IDu string, Su string) (*SKcs, *Sku) {
+func (voabe *VOABE) KeyGenU(pk *pk, msk *msk, IDu string, Su []string) (*SKcs, *Sku) {
 	// Su: "Doctor Nurse" split with blank
-	attrs := strings.Split(Su, " ")
+	//attrs := strings.Split(Su, " ")
 
 	sampler := sample.NewUniformRange(big.NewInt(1), voabe.P)
 
@@ -166,23 +169,19 @@ func (voabe *VOABE) KeyGenU(pk *pk, msk *msk, IDu string, Su string) (*SKcs, *Sk
 	Ru2 := new(bn256.G2).ScalarMult(pk.G2, invDenom)
 
 	// K{u,x} = hx^{tu}  for x ∈ Su
-	Kux := make(map[string]*bn256.G1)
-	Kux2 := make(map[string]*bn256.G2)
-	for _, attr := range attrs {
-		attr = strings.TrimSpace(attr)
-		if attr == "" {
-			continue
-		}
-		hx := pk.Hx[attr]
+	Kux := make(map[int]*bn256.G1)
+	Kux2 := make(map[int]*bn256.G2)
+	for i := 0; i < len(Su); i++ {
+		hx := pk.Hx[i]
 		if hx == nil {
 			log.Fatal("Fail to match hx with su")
 		}
-		Kux[attr] = new(bn256.G1).ScalarMult(hx, t)
+		Kux[i] = new(bn256.G1).ScalarMult(hx, t)
 
-		exp := HashToBigInt(attr)
+		exp := HashToBigInt(Su[i])
 		exp.Mod(exp, voabe.P)
 		hx2 := new(bn256.G2).ScalarMult(pk.G2, exp)
-		Kux2[attr] = new(bn256.G2).ScalarMult(hx2, t) // hx^{t} in G2
+		Kux2[i] = new(bn256.G2).ScalarMult(hx2, t) // hx^{t} in G2
 	}
 	// sku = g^{α2} g^{a tu}
 	b1 := new(bn256.G1).ScalarMult(pk.G, msk.alpha2)
@@ -300,15 +299,15 @@ func (voabe *VOABE) EncCS(pk *pk, cph *Cph, pkPV *bn256.G1) *CPh {
 		if i < 0 || i >= len(cph.MSP.RowToAttrib) {
 			log.Fatalf("MSP.RowToAttrib index %d out of range", i)
 		}
-		attrName := cph.MSP.RowToAttrib[i]
+		//attrName := cph.MSP.RowToAttrib[i]
 
-		//term2 = h_x^{-ri}
+		//term2 = hx^{-ri}
 		//riNeg := new(big.Int).Neg(ri)
 		//riNeg.Mod(riNeg, voabe.P)
 		riNeg := new(big.Int).Sub(voabe.P, ri)
 		riNeg.Mod(riNeg, voabe.P)
 
-		term2 := new(bn256.G1).ScalarMult(pk.Hx[attrName], riNeg)
+		term2 := new(bn256.G1).ScalarMult(pk.Hx[i], riNeg)
 
 		// term3 = pkPV^{- ri}
 		term3 := new(bn256.G1).ScalarMult(pkPV, riNeg)
@@ -401,16 +400,11 @@ func (voabe *VOABE) GenProofForPV(pk *pk, skDOcs *SKcs, cph *CPh, IDDO string, S
 	prodK := new(bn256.G1).ScalarMult(pk.G, big.NewInt(0))
 	first := true
 
-	for _, attr := range SDoStar {
-		attr = strings.TrimSpace(attr)
-		if attr == "" {
-			continue
-		}
-		Kux := skDOcs.Kux[attr]
-
-		hx := pk.Hx[attr]
+	for i := 0; i < len(SDoStar); i++ {
+		Kux := skDOcs.Kux[i]
+		hx := pk.Hx[i]
 		if hx == nil {
-			return nil, fmt.Errorf("hx for attr %s not found in pk.Hx", attr)
+			return nil, fmt.Errorf("hx for attr %s not found in pk.Hx", SDoStar[i])
 		}
 		// hx^t
 		hxt := new(bn256.G1).ScalarMult(hx, t)
@@ -534,12 +528,8 @@ func (voabe *VOABE) VerifyProofSymmetric(pk *pk, cph *CPh, proof *Proof, IDDO st
 	// Compute ∏ hx
 	prodHx := new(bn256.G1).ScalarMult(pk.G, big.NewInt(0))
 	first := true
-	for _, attr := range proof.SDoStar {
-		attr = strings.TrimSpace(attr)
-		if attr == "" {
-			continue
-		}
-		hx := pk.Hx[attr]
+	for i := 0; i < len(proof.SDoStar); i++ {
+		hx := pk.Hx[i]
 		if hx == nil {
 			// att dont match
 			return false
@@ -635,10 +625,9 @@ func (voabe *VOABE) Sanitize(pk *pk, skPV *big.Int, cph *CPh) *CPh {
 		if i < 0 || i >= len(cph.MSP.RowToAttrib) {
 			log.Fatalf("MSP.RowToAttrib index %d out of range", i)
 		}
-		attrName := cph.MSP.RowToAttrib[i]
-		hx, ok := pk.Hx[attrName]
+		hx, ok := pk.Hx[i]
 		if !ok || hx == nil {
-			log.Fatalf("no hx for attribute %s", attrName)
+			log.Fatalf("no hx for attribute %s", cph.MSP.RowToAttrib[i])
 		}
 
 		// h{ρ(i)}^{-r}
@@ -667,22 +656,16 @@ func (voabe *VOABE) Sanitize(pk *pk, skPV *big.Int, cph *CPh) *CPh {
 }
 
 // DecCS:CS uses skCS to outsource decryption of the sanitize ciphertext cph
-func (voabe *VOABE) DecCS(pk *pk, cph *CPh, skCS *SKcs, SDU string) (*bn256.GT, error) {
-	//Parse the attribute set SDU of DU
-	attrs := strings.Split(SDU, " ")
-	attrSet := make(map[string]bool)
-	for _, a := range attrs {
-		a = strings.TrimSpace(a)
-		if a == "" {
-			continue
-		}
-		attrSet[a] = true
+func (voabe *VOABE) DecCS(pk *pk, cph *CPh, skCS *SKcs, SDU []string) (*bn256.GT, error) {
+	attrSet := make(map[int]bool)
+	for i := 0; i < len(SDU); i++ {
+		attrSet[i] = true
 	}
 
 	//Find I = { i | ρ(i) ∈ SDU }
 	var I []int
-	for i, attrName := range cph.MSP.RowToAttrib {
-		if attrSet[attrName] {
+	for i, _ := range cph.MSP.RowToAttrib {
+		if attrSet[i] {
 			I = append(I, i)
 		}
 	}
@@ -691,7 +674,7 @@ func (voabe *VOABE) DecCS(pk *pk, cph *CPh, skCS *SKcs, SDU string) (*bn256.GT, 
 	}
 
 	//Through MSP reconstruction coefficient wi, automatically find out I and the corresponding wi (mod p) according to msp and SDU
-	wMap, err := LSSS.ReconstructCoefficients(cph.MSP, attrs, voabe.P)
+	wMap, err := LSSS.ReconstructCoefficients(cph.MSP, SDU, voabe.P)
 	if err != nil {
 		return nil, fmt.Errorf("DecCS: reconstruct coefficients failed: %v", err)
 	}
@@ -730,11 +713,10 @@ func (voabe *VOABE) DecCS(pk *pk, cph *CPh, skCS *SKcs, SDU string) (*bn256.GT, 
 		if i < 0 || i >= len(cph.MSP.RowToAttrib) {
 			return nil, fmt.Errorf("DecCS: MSP.RowToAttrib index %d out of range", i)
 		}
-		attrName := cph.MSP.RowToAttrib[i]
 
-		kux2, ok := skCS.Kux2[attrName]
+		kux2, ok := skCS.Kux2[i]
 		if !ok || kux2 == nil {
-			return nil, fmt.Errorf("DecCS: no Kux2 for attribute %s", attrName)
+			return nil, fmt.Errorf("DecCS: no Kux2 for attribute %s", cph.MSP.RowToAttrib[i])
 		}
 
 		eDiK := bn256.Pair(cph.Di[i], kux2)
@@ -794,7 +776,7 @@ func (voabe *VOABE) DecDU(phiDU *bn256.GT, cph *CPh, skDU *Sku) ([]byte, error) 
 	return plaintext, nil
 }
 
-//——————————————————————————————————————Auxiliary Functions————————————————————————//
+//——————————————————————————————————————Auxiliary Functions————————————————————————————————————————————//
 
 // The HashToG1 function maps an attribute x to a point on the G1 group
 func HashToG1(attribute string) *bn256.G1 {

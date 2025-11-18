@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -18,7 +19,11 @@ func TestMainFlow(t *testing.T) {
 	require.NotNil(t, sk, "SecretKey should not be nil")
 
 	// 测试 KeyGen
-	userAttrs := "海南大学 博士"
+	//userAttrs := "海南大学 博士"
+	var userAttrs []string
+	for i := 1; i <= 10; i++ {
+		userAttrs = append(userAttrs, "Attr"+strconv.Itoa(i)) // A1, A2, ..., A100
+	}
 	osk, dsk, err := pvoabe.KeyGen(pk, alpha, userAttrs)
 	require.NoError(t, err, "KeyGen should not return an error")
 	require.NotNil(t, osk, "OSK should not be nil")

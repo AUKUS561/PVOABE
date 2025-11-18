@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/fentec-project/gofe/abe"
@@ -12,7 +13,10 @@ func TestVOABE_FullFlowWithPolicy(t *testing.T) {
 	voabe := NewVOABE()
 
 	// 系统属性全集 U，要覆盖策略中会用到的所有属性
-	U := "教授 海南大学 博士 清华 北大 哈佛"
+	var U []string
+	for i := 1; i <= 100; i++ {
+		U = append(U, "Attr"+strconv.Itoa(i)) // Attr1, Attr2, ..., Attr100
+	}
 	pk, msk := voabe.SetUp(U)
 	require.NotNil(t, pk, "pk should not be nil")
 	require.NotNil(t, msk, "msk should not be nil")
@@ -25,26 +29,32 @@ func TestVOABE_FullFlowWithPolicy(t *testing.T) {
 	// 3. 生成 DO 的密钥（给 CS 部分 & 给 DO 自己部分）
 	//DO 的身份和属性（这里让 DO 拥有所有策略里的属性）
 	IDDO := "DO-001"
-	SDO := "教授 海南大学 博士"
+	var SDO []string
+	for i := 1; i <= 10; i++ {
+		SDO = append(SDO, "Attr"+strconv.Itoa(i)) // A1, A2, ..., A10
+	}
 	skDOcs, _ := voabe.KeyGenU(pk, msk, IDDO, SDO)
 	require.NotNil(t, skDOcs, "skDOcs should not be nil")
 
 	// 4. 生成 DU 的密钥（外包解密所需）
-	//DU 的属性集要满足访问策略：教授 OR (海南大学 AND 博士)
+	//DU 的属性集要满足访问策略
 	IDDU := "DU-001"
-	SDU := "海南大学 博士"
+	var SDU []string
+	for i := 1; i <= 10; i++ {
+		SDU = append(SDU, "Attr"+strconv.Itoa(i)) // A1, A2, ..., A10
+	}
 	skDUcs, skDU := voabe.KeyGenU(pk, msk, IDDU, SDU)
 	require.NotNil(t, skDUcs, "skDUcs should not be nil")
 	require.NotNil(t, skDU, "skDU should not be nil")
 
 	// 5. 用布尔表达式构造访问策略 MSP
-	policy := "教授 OR (海南大学 AND 博士)"
+	policy := "Attr1 OR (Attr2 AND Attr3)"
 	msp, err := abe.BooleanToMSP(policy, false)
 	require.NoError(t, err, "BooleanToMSP should not return an error")
 	require.NotNil(t, msp, "msp should not be nil")
 
 	// 6. DO 按策略加密 R
-	R := []byte("这是voabe的测试明文!")
+	R := []byte("这是voabe的测试明文!!")
 	cphDo := voabe.EncDo(pk, pkPV, R, msp)
 	require.NotNil(t, cphDo, "EncDo ciphertext should not be nil")
 
@@ -54,7 +64,7 @@ func TestVOABE_FullFlowWithPolicy(t *testing.T) {
 
 	// 8. PV 要求 CS 证明它是“按访问控制策略正确生成密文的
 	//SDoStar 是 DO 属性的一个子集，用于构造证明里 ∏ hx 部分
-	SDoStar := []string{"教授"}
+	SDoStar := []string{"Attr1"}
 	proof, err := voabe.GenProofForPV(pk, skDOcs, cph, IDDO, SDoStar)
 	require.NoError(t, err, "GenProofForPV should not return an error")
 	require.NotNil(t, proof, "proof should not be nil")

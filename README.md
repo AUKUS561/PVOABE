@@ -1,5 +1,5 @@
 # PVOABE
-This repository implements all algorithms of PVOABE, you need to install 'go' to run it
+This repository implements all algorithms of PVOABE, you need to install  `go` to run it
 
 This repo utilizes the Gofe repository:https://github.com/fentec-project/gofe
 

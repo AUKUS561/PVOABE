@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"strconv"
 
 	"github.com/AUKUS561/PVOABE/DLEQ"
 	"github.com/AUKUS561/PVOABE/PVGSS"
@@ -34,7 +35,11 @@ type PublicKey struct {
 }
 
 func (pvoabe *PVOABE) Setup() (*big.Int, *PublicKey, *PVGSS.SecretKey, error) {
-	PP, sk, err := PVGSS.NewPVGSS().Setup("清华 北大 海南大学 博士 硕士 教授")
+	var attributeUniverse []string
+	for i := 1; i <= 100; i++ {
+		attributeUniverse = append(attributeUniverse, "Attr"+strconv.Itoa(i)) // Attr1, Attr2, ..., Attr100
+	}
+	PP, sk, err := PVGSS.NewPVGSS().Setup(attributeUniverse)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -47,7 +52,7 @@ func (pvoabe *PVOABE) Setup() (*big.Int, *PublicKey, *PVGSS.SecretKey, error) {
 	return alpha, &PublicKey{PP: PP, Base: base}, sk, nil
 }
 
-func (pvoabe *PVOABE) KeyGen(pk *PublicKey, mk *big.Int, su string) (*PVGSS.OSK, *bn256.G1, error) {
+func (pvoabe *PVOABE) KeyGen(pk *PublicKey, mk *big.Int, su []string) (*PVGSS.OSK, *bn256.G1, error) {
 	OSK, err := PVGSS.NewPVGSS().KeyGen(pk.PP, su)
 	if err != nil {
 		return nil, nil, err
@@ -77,7 +82,7 @@ func (pvoabe *PVOABE) Enc(pk *PublicKey, msg string) (*CipherText, error) {
 	Cprime := new(bn256.G2).ScalarBaseMult(s)       //C'
 	abeTerm := new(bn256.GT).ScalarMult(pk.Base, s) //e(g,g)^alpha s
 	//生成访问控制策略
-	policy := "教授 OR (海南大学 AND 博士)"
+	policy := "Attr1 OR (Attr2 AND Attr3)"
 	msp, _ := abe.BooleanToMSP(policy, false) //根据访问控制策略构建msp矩阵
 
 	//生成一个随机的GT元素作为对称密钥
