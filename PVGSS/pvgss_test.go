@@ -2,7 +2,7 @@ package PVGSS
 
 import (
 	"math/big"
-	"strings"
+	"strconv"
 	"testing"
 
 	"github.com/fentec-project/bn256"
@@ -13,9 +13,13 @@ import (
 
 func TestSetup(t *testing.T) {
 	pvgss := NewPVGSS()
-	attrs := "清华 北大 海南大学 博士 硕士 教授"
-
-	pp, sk, err := pvgss.Setup(attrs)
+	//attrs := "清华 北大 海南大学 博士 硕士 教授"
+	//Initlize the system attribute set:Attr1~Attr100
+	var attributeUniverse []string
+	for i := 1; i <= 100; i++ {
+		attributeUniverse = append(attributeUniverse, "Attr"+strconv.Itoa(i)) // Attr1, Attr2, ..., Attr100
+	}
+	pp, sk, err := pvgss.Setup(attributeUniverse)
 	require.NoError(t, err)
 	require.NotNil(t, pp)
 	require.NotNil(t, sk)
@@ -41,7 +45,8 @@ func TestSetup(t *testing.T) {
 	}
 
 	// 属性数量应与 PK 映射长度一致
-	numAttrs := len(strings.Split(attrs, " "))
+	//numAttrs := len(strings.Split(attrs, " "))
+	numAttrs := len(attributeUniverse)
 	require.Equal(t, numAttrs, len(pp.HXs))
 	require.Equal(t, numAttrs, len(pp.PkXs))
 
@@ -53,12 +58,19 @@ func TestSetup(t *testing.T) {
 func TestKeyGen(t *testing.T) {
 	//先生成PP
 	pvgss := NewPVGSS()
-	attrs := "清华 北大 海南大学 硕士 博士 教授"
-	pp, _, err := pvgss.Setup(attrs)
+	var attributeUniverse []string
+	for i := 1; i <= 100; i++ {
+		attributeUniverse = append(attributeUniverse, "Attr"+strconv.Itoa(i)) // Attr1, Attr2, ..., Attr100
+	}
+	pp, _, err := pvgss.Setup(attributeUniverse)
 	require.NoError(t, err)
 	require.NotNil(t, pp)
 	//选择用户属性集Su
-	userAttrs := "清华 博士"
+	//userAttrs := "清华 博士"
+	var userAttrs []string
+	for i := 1; i <= 10; i++ {
+		userAttrs = append(userAttrs, "Attr"+strconv.Itoa(i)) // A1, A2, ..., A100
+	}
 	osk, err := pvgss.KeyGen(pp, userAttrs)
 	require.NoError(t, err)
 	require.NotNil(t, osk)
@@ -73,15 +85,20 @@ func TestKeyGen(t *testing.T) {
 func TestShare(t *testing.T) {
 	//Setup
 	pvgss := NewPVGSS()
-	attrs := "清华 北大 海南大学 硕士 博士 教授"
-	pp, _, err := pvgss.Setup(attrs)
+	//attrs := "清华 北大 海南大学 硕士 博士 教授"
+	var attributeUniverse []string
+	for i := 1; i <= 100; i++ {
+		attributeUniverse = append(attributeUniverse, "Attr"+strconv.Itoa(i)) // Attr1, Attr2, ..., Attr100
+	}
+	pp, _, err := pvgss.Setup(attributeUniverse)
 	require.NoError(t, err)
 	require.NotNil(t, pp)
 	//s<-Zp
 	sampler := sample.NewUniformRange(big.NewInt(1), pp.Order)
 	s, _ := sampler.Sample()
 	B := new(bn256.G1).ScalarMult(pp.Pk, s) //B=pk^s
-	policy := "教授 AND (海南大学 OR 博士)"
+	//policy := "教授 AND (海南大学 OR 博士)"
+	policy := "A1 AND (A2 OR A3)"
 	msp, _ := abe.BooleanToMSP(policy, false)
 	shareResult, err := pvgss.Share(pp, B, msp)
 	if err != nil {
@@ -97,8 +114,12 @@ func TestShare(t *testing.T) {
 func TestSVerify(t *testing.T) {
 	//Setup
 	pvgss := NewPVGSS()
-	attrs := "清华 北大 海南大学 硕士 博士 教授"
-	pp, _, err := pvgss.Setup(attrs)
+	//attrs := "清华 北大 海南大学 硕士 博士 教授"
+	var attributeUniverse []string
+	for i := 1; i <= 100; i++ {
+		attributeUniverse = append(attributeUniverse, "Attr"+strconv.Itoa(i)) // Attr1, Attr2, ..., Attr100
+	}
+	pp, _, err := pvgss.Setup(attributeUniverse)
 	require.NoError(t, err)
 	require.NotNil(t, pp)
 	//s<-Zp
@@ -106,7 +127,8 @@ func TestSVerify(t *testing.T) {
 	s, _ := sampler.Sample()
 	B := new(bn256.G1).ScalarMult(pp.Pk, s)   //B=pk^s
 	Cprime := new(bn256.G2).ScalarBaseMult(s) //C'
-	policy := "教授 AND (海南大学 OR 博士)"
+	//policy := "教授 AND (海南大学 OR 博士)"
+	policy := "A1 AND (A2 OR A3)"
 	msp, _ := abe.BooleanToMSP(policy, false)
 	shareResult, err := pvgss.Share(pp, B, msp)
 	if err != nil {
@@ -124,14 +146,22 @@ func TestAll(t *testing.T) {
 	//Setup
 	pvgss := NewPVGSS()
 	//属性全集U
-	attrs := "清华 北大 海南大学 硕士 博士 教授"
+	//attrs := "清华 北大 海南大学 硕士 博士 教授"
+	var attributeUniverse []string
+	for i := 1; i <= 100; i++ {
+		attributeUniverse = append(attributeUniverse, "Attr"+strconv.Itoa(i)) // Attr1, Attr2, ..., Attr100
+	}
 	//Setup生成pp，sk
-	pp, sk, err := pvgss.Setup(attrs)
+	pp, sk, err := pvgss.Setup(attributeUniverse)
 	require.NoError(t, err)
 	require.NotNil(t, pp)
 	require.NotNil(t, sk)
 	//选择用户属性集Su
-	userAttrs := "海南大学 博士"
+	//userAttrs := "海南大学 博士"
+	var userAttrs []string
+	for i := 1; i <= 10; i++ {
+		userAttrs = append(userAttrs, "Attr"+strconv.Itoa(i)) // A1, A2, ..., A100
+	}
 	//KeyGen
 	osk, err := pvgss.KeyGen(pp, userAttrs)
 	require.NoError(t, err)
@@ -141,7 +171,8 @@ func TestAll(t *testing.T) {
 	s, _ := sampler.Sample()
 	B := new(bn256.G1).ScalarMult(pp.Pk, s)   //B=pk^s
 	Cprime := new(bn256.G2).ScalarBaseMult(s) //C'
-	policy := "教授 OR (海南大学 AND 博士)"
+	//policy := "教授 OR (海南大学 AND 博士)"
+	policy := "Attr1 OR (Attr2 AND Attr3)"
 	msp, _ := abe.BooleanToMSP(policy, false)
 	//Share
 	shareResult, err := pvgss.Share(pp, B, msp)
