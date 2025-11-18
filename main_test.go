@@ -27,16 +27,19 @@ func TestMainFlow(t *testing.T) {
 	// 测试 Encrypt
 	message := "Hello, PVOABE!" //生成要加密的msg
 	ct, err := pvoabe.Enc(pk, message)
+	require.NoError(t, err, "Enc should not return an error")
 	require.NotNil(t, ct, "Ciphertext should not be nil")
 
 	//测试OEnc
 	shares, err := pvoabe.OEnc(pk, ct.B, ct.Msp)
+	require.NoError(t, err, "OEnc should not return an error")
 
 	//测试OEncVer
 	t.Logf("OEncVer Result : %v", pvoabe.OEncVer(pk, shares, ct.Cprime, ct.Msp))
 
 	//测试ODec
 	R, Proof, err := pvoabe.ODec(pk, shares, ct.Msp, osk, sk)
+	require.NoError(t, err, "ODec should not return an error")
 
 	//测试ODecVer
 	t.Logf("ODecVer Result : %v", pvoabe.ODecVer(pk, shares, ct.Msp, osk, R, Proof))

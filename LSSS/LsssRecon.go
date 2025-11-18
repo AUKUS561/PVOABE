@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/fentec-project/bn256"
 	"github.com/fentec-project/gofe/abe"
@@ -83,4 +84,66 @@ func Recon(msp *abe.MSP, shares map[int]*bn256.GT, p *big.Int) (*bn256.GT, error
 	}
 
 	return reconstructedGT, nil
+}
+
+func ReconstructCoefficients(msp *abe.MSP, SDU []string, p *big.Int) (map[int]*big.Int, error) {
+	if msp == nil || len(msp.Mat) == 0 {
+		return nil, errors.New("msp or msp.Mat is empty")
+	}
+
+	// 1. 把 SDU 做成一个 map，方便判断某个属性是否属于 SDU
+	attrSet := make(map[string]bool)
+	for _, a := range SDU {
+		a = strings.TrimSpace(a)
+		if a == "" {
+			continue
+		}
+		attrSet[a] = true
+	}
+
+	// 2. 按照 ρ(i) ∈ SDU 的行构造子矩阵 MI
+	SubMatrix := make(data.Matrix, 0)
+	indices := make([]int, 0)
+
+	for i, row := range msp.Mat {
+		attrName := msp.RowToAttrib[i]
+		if attrSet[attrName] {
+			SubMatrix = append(SubMatrix, row)
+			indices = append(indices, i)
+		}
+	}
+
+	if len(indices) == 0 {
+		return nil, errors.New("no rows selected for SDU: attributes do not satisfy policy")
+	}
+
+	// 3. 构造目标向量 v = (1, 0, ..., 0)
+	numCols := len(msp.Mat[0])
+	if numCols == 0 {
+		return nil, errors.New("msp.Mat has zero columns")
+	}
+
+	targetVector := make(data.Vector, numCols)
+	targetVector[0] = big.NewInt(1)
+	for i := 1; i < numCols; i++ {
+		targetVector[i] = big.NewInt(0)
+	}
+
+	// 4. 解线性方程 w * M_I = v   等价于  (M_I^T) * w^T = v
+	WI, err := data.GaussianEliminationSolver(SubMatrix.Transpose(), targetVector, p)
+	if err != nil {
+		return nil, fmt.Errorf("LSSS ReconstructCoefficients: system not solvable: %w", err)
+	}
+
+	// 5. 把解向量 WI 映射回原矩阵行号 i，形成 {i -> w_i}
+	//    注意：WI[k] 对应 SubMatrix 中的第 k 行，即原矩阵中的 indices[k]
+	wMap := make(map[int]*big.Int)
+	for k, wi := range WI {
+		originalRowIndex := indices[k]
+		// 规范化到 [0, p-1]
+		exponent := new(big.Int).Mod(wi, p)
+		wMap[originalRowIndex] = exponent
+	}
+
+	return wMap, nil
 }
