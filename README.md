@@ -12,9 +12,17 @@ to test all the functions of PVGSS.
 
 ## PVOABE
 The main.go file implements all the functions of PVOABE. You can run main_test.go to test all the functions.
-
-2.voabe.go implemented the paper's scheme,you can run voabe_test.go to test it.
- * Verifiable Outsourced Attribute-Based Encryption Scheme for Cloud-Assisted Mobile E-health System
 ```bash
 go test -v 
+```
+## TEST
+We also tested several schemes proposed in similar papers for comparison
+ * Verifiable Outsourced Attribute-Based Encryption Scheme for Cloud-Assisted Mobile E-health System
+ * Efficient Ciphertext-Policy Attribute-Based Encryption Constructions with Outsourced Encryption and Decryption
+You can test them by run
+```bash
+go test -v ./VOABE
+```
+```bash
+go test -v ./ECPABE
 ```

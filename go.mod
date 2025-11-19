@@ -9,7 +9,7 @@ require (
 )
 
 require (
-	github.com/PrimumMobile/LSSS v0.0.0-20250923161054-bfd0c32062fb
+	//github.com/PrimumMobile/LSSS v0.0.0-20250923161054-bfd0c32062fb
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
