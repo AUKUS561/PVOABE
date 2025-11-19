@@ -25,7 +25,7 @@ func computeReferenceKey(t *testing.T, e *ECPABE, mk *MK, ct *CipherText) *bn256
 	return keyRef
 }
 
-// 测试：全流程得到的 Key 应等于 reference Key + 为了与之前的测试一致，这里也用AES加密实现加解密测试
+// 测试：全流程得到的 Key 应等于 reference Key
 func TestECPABE_FullFlow_SatisfiedPolicy(t *testing.T) {
 	e := NewECPABE()
 	mk, pk := e.Setup()
@@ -95,24 +95,4 @@ func TestECPABE_FullFlow_SatisfiedPolicy(t *testing.T) {
 		t.Fatalf("decryption key mismatch:\n got  %x\n want %x",
 			keyDec.Marshal(), keyRef.Marshal())
 	}
-
-	//用它封装的密钥Key进行一次AES加解密()
-	plaintext := []byte("Hello ECPABE!")
-
-	ciphertext, err := SymEnc(keyDec, plaintext)
-	if err != nil {
-		t.Fatalf("SymEnc failed: %v", err)
-	}
-
-	decPlaintext, err := SymDec(keyDec, ciphertext)
-	if err != nil {
-		t.Fatalf("SymDec failed: %v", err)
-	}
-	t.Logf("Decrypted Result: %s", decPlaintext)
-
-	if !bytes.Equal(plaintext, decPlaintext) {
-		t.Fatalf("Symmetric encryption round-trip failed:\n got  %q\n want %q",
-			string(decPlaintext), string(plaintext))
-	}
-
 }

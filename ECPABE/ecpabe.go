@@ -1,13 +1,9 @@
 package ecpabe
 
 import (
-	"crypto/aes"
-	cbc "crypto/cipher"
-	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
 
 	"github.com/AUKUS561/PVOABE/LSSS"
@@ -358,78 +354,4 @@ func H2(msg []byte, p *big.Int) *big.Int {
 		x.SetInt64(1)
 	}
 	return x
-}
-
-// symmetric encryption--AES-CBC，Ciphertext：IV || C
-func SymEnc(key *bn256.GT, plaintext []byte) ([]byte, error) {
-	// Generate AES key
-	keyCBC := sha256.Sum256(key.Marshal())
-
-	c, err := aes.NewCipher(keyCBC[:])
-	if err != nil {
-		return nil, err
-	}
-
-	blockSize := c.BlockSize()
-
-	// Generate random IV
-	iv := make([]byte, blockSize)
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return nil, err
-	}
-
-	// PKCS7 padding
-	padLen := blockSize - (len(plaintext) % blockSize)
-	msgPad := make([]byte, len(plaintext)+padLen)
-	copy(msgPad, plaintext)
-	for i := len(plaintext); i < len(msgPad); i++ {
-		msgPad[i] = byte(padLen)
-	}
-
-	ciphertext := make([]byte, blockSize+len(msgPad))
-	copy(ciphertext[:blockSize], iv)
-
-	encrypter := cbc.NewCBCEncrypter(c, iv)
-	encrypter.CryptBlocks(ciphertext[blockSize:], msgPad)
-
-	return ciphertext, nil
-}
-
-// SymDec uses the same method as SymEnc to derive AES key decryption from GT element key.
-func SymDec(key *bn256.GT, ciphertext []byte) ([]byte, error) {
-	keyCBC := sha256.Sum256(key.Marshal())
-
-	c, err := aes.NewCipher(keyCBC[:])
-	if err != nil {
-		return nil, err
-	}
-
-	blockSize := c.BlockSize()
-	if len(ciphertext) < blockSize || len(ciphertext)%blockSize != 0 {
-		return nil, fmt.Errorf("SymDec: invalid ciphertext length")
-	}
-
-	iv := ciphertext[:blockSize]
-	enc := ciphertext[blockSize:]
-
-	decrypter := cbc.NewCBCDecrypter(c, iv)
-	msgPad := make([]byte, len(enc))
-	decrypter.CryptBlocks(msgPad, enc)
-
-	if len(msgPad) == 0 {
-		return nil, fmt.Errorf("SymDec: empty plaintext after decrypt")
-	}
-
-	// PKCS7
-	padLen := int(msgPad[len(msgPad)-1])
-	if padLen <= 0 || padLen > blockSize || padLen > len(msgPad) {
-		return nil, fmt.Errorf("SymDec: invalid padding")
-	}
-	for i := len(msgPad) - padLen; i < len(msgPad); i++ {
-		if msgPad[i] != byte(padLen) {
-			return nil, fmt.Errorf("SymDec: invalid padding bytes")
-		}
-	}
-
-	return msgPad[:len(msgPad)-padLen], nil
 }
