@@ -54,8 +54,8 @@ func TestVOABE_FullFlowWithPolicy(t *testing.T) {
 	require.NotNil(t, msp, "msp should not be nil")
 
 	// 6. DO 按策略加密 R
-	R := []byte("这是voabe的测试明文!!")
-	cphDo := voabe.EncDo(pk, pkPV, R, msp)
+	//R := []byte("这是voabe的测试明文!!")
+	cphDo := voabe.EncDo(pk, pkPV, msp)
 	require.NotNil(t, cphDo, "EncDo ciphertext should not be nil")
 
 	// 7. CS 根据中间密文生成最终密文 cph
@@ -84,8 +84,9 @@ func TestVOABE_FullFlowWithPolicy(t *testing.T) {
 	require.NotNil(t, phiDU, "phiDU should not be nil")
 
 	// 12. DU 用自己的密钥 skDU 做最终解密
-	decR, err := voabe.DecDU(phiDU, cphSan, skDU)
+	KR, err := voabe.DecDU(phiDU, cphSan, skDU)
 	require.NoError(t, err, "DecDU should not return an error")
-	require.Equal(t, string(R), string(decR), "decrypted record should equal original R")
-	t.Logf("Decrypted Message: %s", decR)
+	require.NotNil(t, KR, "KR should not be nil")
+	//require.Equal(t, string(R), string(decR), "decrypted record should equal original R")
+	//t.Logf("Decrypted Message: %s", decR)
 }

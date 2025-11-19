@@ -214,7 +214,7 @@ func (voabe *VOABE) KeyGenU(pk *pk, msk *msk, IDu string, Su []string) (*SKcs, *
 
 // Intermediate ciphertexts
 type Cph struct {
-	CR      []byte           // CR = Enc{KR}(R)
+	//CR      []byte           // CR = Enc{KR}(R)
 	C       *bn256.GT        // C  ∈ GT
 	CPrime  *bn256.G1        // C' ∈ G1
 	CSecond *bn256.G1        // C'' ∈ G1
@@ -223,17 +223,17 @@ type Cph struct {
 }
 
 // EncDo encrypt the record R by access structure Γ and send the intermediate ciphertexts to CS
-func (voave *VOABE) EncDo(pk *pk, pkPV *bn256.G1, R []byte, msp *abe.MSP) *Cph {
+func (voave *VOABE) EncDo(pk *pk, pkPV *bn256.G1, msp *abe.MSP) *Cph {
 	//Generate symmetric key KR
 	sampler := sample.NewUniformRange(big.NewInt(1), voave.P)
 	k, _ := sampler.Sample()
 	KR := new(bn256.GT).ScalarMult(pk.Base, k) //Base = e(g,g)^alpha
 
 	//Symmetrical encryption -> CR
-	CR, err := SymEnc(KR, R)
-	if err != nil {
-		return nil
-	}
+	// CR, err := SymEnc(KR, R)
+	// if err != nil {
+	// 	return nil
+	// }
 
 	//λi = Mi · v
 	s, _ := sampler.Sample()
@@ -260,7 +260,7 @@ func (voave *VOABE) EncDo(pk *pk, pkPV *bn256.G1, R []byte, msp *abe.MSP) *Cph {
 	CSecond := new(bn256.G1).Add(ws, pvs)
 
 	return &Cph{
-		CR:      CR,
+		//CR:      CR,
 		C:       C,
 		CPrime:  CPrime,
 		CSecond: CSecond,
@@ -351,7 +351,7 @@ func HashCphToScalar(cph *CPh, p *big.Int) *big.Int {
 	h := sha256.New()
 
 	//Put CR, C, C', C'' to hash
-	h.Write(cph.CR)
+	//h.Write(cph.CR)
 	h.Write(cph.C.Marshal())
 	h.Write(cph.CPrime.Marshal())
 	h.Write(cph.CSecond.Marshal())
@@ -749,7 +749,7 @@ func (voabe *VOABE) DecCS(pk *pk, cph *CPh, skCS *SKcs, SDU []string) (*bn256.GT
 }
 
 // DecDU: DU uses φDU and its own key skDU to recover KR from cph and decrypt it
-func (voabe *VOABE) DecDU(phiDU *bn256.GT, cph *CPh, skDU *Sku) ([]byte, error) {
+func (voabe *VOABE) DecDU(phiDU *bn256.GT, cph *CPh, skDU *Sku) (*bn256.GT, error) {
 	if phiDU == nil || cph == nil || skDU == nil || skDU.Sku2 == nil {
 		return nil, fmt.Errorf("DecDU: nil input")
 	}
@@ -768,12 +768,12 @@ func (voabe *VOABE) DecDU(phiDU *bn256.GT, cph *CPh, skDU *Sku) ([]byte, error) 
 	KR := new(bn256.GT).Add(cph.C, denomInv)
 
 	//Use KR as the symmetric key to decrypt CR
-	plaintext, err := SymDec(KR, cph.CR)
-	if err != nil {
-		return nil, fmt.Errorf("DecDU: symmetric decryption failed: %v", err)
-	}
+	// plaintext, err := SymDec(KR, cph.CR)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("DecDU: symmetric decryption failed: %v", err)
+	// }
 
-	return plaintext, nil
+	return KR, nil
 }
 
 //——————————————————————————————————————Auxiliary Functions————————————————————————————————————————————//
