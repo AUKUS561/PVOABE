@@ -10,6 +10,7 @@ import (
 	"log"
 	"math/big"
 	"sort"
+	"strconv"
 
 	"github.com/AUKUS561/PVOABE/LSSS"
 	"github.com/fentec-project/bn256"
@@ -218,21 +219,64 @@ type Cph struct {
 	MSP     *abe.MSP         // access structure
 }
 
+func GeneratePolicy(attrCount int) string {
+
+	attrs := make([]string, attrCount)
+	for i := 0; i < attrCount; i++ {
+		attrs[i] = "Attr" + strconv.Itoa(i+1)
+	}
+
+	randInt := func(n int) int {
+		r, _ := rand.Int(rand.Reader, big.NewInt(int64(n)))
+		return int(r.Int64())
+	}
+
+	for i := attrCount - 1; i > 0; i-- {
+		j := randInt(i + 1)
+		attrs[i], attrs[j] = attrs[j], attrs[i]
+	}
+
+	var build func([]string) string
+	build = func(list []string) string {
+
+		if len(list) == 1 {
+			return list[0]
+		}
+
+		op := "AND"
+		if randInt(2) == 0 {
+			op = "OR"
+		}
+
+		split := randInt(len(list)-1) + 1 // [1, len-1]
+		left := build(list[:split])
+		right := build(list[split:])
+
+		return "(" + left + " " + op + " " + right + ")"
+	}
+
+	policy := build(attrs)
+
+	if len(policy) > 2 && policy[0] == '(' && policy[len(policy)-1] == ')' {
+		policy = policy[1 : len(policy)-1]
+	}
+
+	return policy
+}
+
 // EncDo encrypt the record R by access structure Γ and send the intermediate ciphertexts to CS
-func (voave *VOABE) EncDo(pk *pk, pkPV *bn256.G1, msp *abe.MSP) *Cph {
+func (voave *VOABE) EncDo(pk *pk, pkPV *bn256.G1, attrNum int) (*Cph, *bn256.GT) {
 	//Generate symmetric key KR
 	sampler := sample.NewUniformRange(big.NewInt(1), voave.P)
 	k, _ := sampler.Sample()
 	KR := new(bn256.GT).ScalarMult(pk.Base, k) //Base = e(g,g)^alpha
 
-	//Symmetrical encryption -> CR
-	// CR, err := SymEnc(KR, R)
-	// if err != nil {
-	// 	return nil
-	// }
-
 	//λi = Mi · v
 	s, _ := sampler.Sample()
+
+	policy := GeneratePolicy(attrNum)
+	fmt.Printf("Policy=%v\n", policy)
+	msp, _ := abe.BooleanToMSP(policy, false) //根据访问控制策略构建msp矩阵
 	Lambdai, _ := LSSS.Share(msp, s, voave.P)
 
 	//Compute C, C', C''
@@ -262,7 +306,7 @@ func (voave *VOABE) EncDo(pk *pk, pkPV *bn256.G1, msp *abe.MSP) *Cph {
 		CSecond: CSecond,
 		Lambdas: Lambdai,
 		MSP:     msp,
-	}
+	}, KR
 }
 
 // Final ciphertext
@@ -295,11 +339,7 @@ func (voabe *VOABE) EncCS(pk *pk, cph *Cph, pkPV *bn256.G1) *CPh {
 		if i < 0 || i >= len(cph.MSP.RowToAttrib) {
 			log.Fatalf("MSP.RowToAttrib index %d out of range", i)
 		}
-		//attrName := cph.MSP.RowToAttrib[i]
 
-		//term2 = hx^{-ri}
-		//riNeg := new(big.Int).Neg(ri)
-		//riNeg.Mod(riNeg, voabe.P)
 		riNeg := new(big.Int).Sub(voabe.P, ri)
 		riNeg.Mod(riNeg, voabe.P)
 

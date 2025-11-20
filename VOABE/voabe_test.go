@@ -1,16 +1,18 @@
 package VOABE
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 
-	"github.com/fentec-project/gofe/abe"
 	"github.com/stretchr/testify/require"
 )
 
 func TestVOABE_FullFlowWithPolicy(t *testing.T) {
 	// 1. 初始化方案
 	voabe := NewVOABE()
+	attrNum := 5
+	//n := 1000
 
 	// 系统属性全集 U，要覆盖策略中会用到的所有属性
 	var U []string
@@ -30,7 +32,7 @@ func TestVOABE_FullFlowWithPolicy(t *testing.T) {
 	//DO 的身份和属性（这里让 DO 拥有所有策略里的属性）
 	IDDO := "DO-001"
 	var SDO []string
-	for i := 1; i <= 10; i++ {
+	for i := 1; i <= attrNum; i++ {
 		SDO = append(SDO, "Attr"+strconv.Itoa(i)) // A1, A2, ..., A10
 	}
 	skDOcs, _ := voabe.KeyGenU(pk, msk, IDDO, SDO)
@@ -40,22 +42,17 @@ func TestVOABE_FullFlowWithPolicy(t *testing.T) {
 	//DU 的属性集要满足访问策略
 	IDDU := "DU-001"
 	var SDU []string
-	for i := 1; i <= 10; i++ {
+	for i := 1; i <= attrNum; i++ {
 		SDU = append(SDU, "Attr"+strconv.Itoa(i)) // A1, A2, ..., A10
 	}
+	fmt.Printf("User attribute set:%v\n", SDU)
 	skDUcs, skDU := voabe.KeyGenU(pk, msk, IDDU, SDU)
 	require.NotNil(t, skDUcs, "skDUcs should not be nil")
 	require.NotNil(t, skDU, "skDU should not be nil")
 
-	// 5. 用布尔表达式构造访问策略 MSP
-	policy := "Attr1 OR (Attr2 AND Attr3)"
-	msp, err := abe.BooleanToMSP(policy, false)
-	require.NoError(t, err, "BooleanToMSP should not return an error")
-	require.NotNil(t, msp, "msp should not be nil")
-
-	// 6. DO 按策略加密 R
-	//R := []byte("这是voabe的测试明文!!")
-	cphDo := voabe.EncDo(pk, pkPV, msp)
+	// 6. DO 按策略加密 KR
+	cphDo, KR := voabe.EncDo(pk, pkPV, attrNum)
+	fmt.Printf("KR=%v\n", KR)
 	require.NotNil(t, cphDo, "EncDo ciphertext should not be nil")
 
 	// 7. CS 根据中间密文生成最终密文 cph
@@ -84,9 +81,10 @@ func TestVOABE_FullFlowWithPolicy(t *testing.T) {
 	require.NotNil(t, phiDU, "phiDU should not be nil")
 
 	// 12. DU 用自己的密钥 skDU 做最终解密
-	KR, err := voabe.DecDU(phiDU, cphSan, skDU)
+	decKR, err := voabe.DecDU(phiDU, cphSan, skDU)
+	fmt.Printf("decKR=%v\n", decKR)
 	require.NoError(t, err, "DecDU should not return an error")
-	require.NotNil(t, KR, "KR should not be nil")
-	//require.Equal(t, string(R), string(decR), "decrypted record should equal original R")
+	require.NotNil(t, decKR, "KR should not be nil")
+	require.Equal(t, KR, decKR, "decrypted record should equal original R")
 	//t.Logf("Decrypted Message: %s", decR)
 }
