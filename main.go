@@ -1,12 +1,8 @@
 package main
 
 import (
-	"crypto/aes"
-	cbc "crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"fmt"
-	"io"
 	"math/big"
 	"strconv"
 
@@ -32,6 +28,52 @@ func NewPVOABE() *PVOABE {
 type PublicKey struct {
 	PP   *PVGSS.PublicParameter
 	Base *bn256.GT //e(g,g)^alpha
+}
+
+// Generate an access structure
+func GeneratePolicy(attrCount int) string {
+
+	attrs := make([]string, attrCount)
+	for i := 0; i < attrCount; i++ {
+		attrs[i] = "Attr" + strconv.Itoa(i+1)
+	}
+
+	randInt := func(n int) int {
+		r, _ := rand.Int(rand.Reader, big.NewInt(int64(n)))
+		return int(r.Int64())
+	}
+
+	for i := attrCount - 1; i > 0; i-- {
+		j := randInt(i + 1)
+		attrs[i], attrs[j] = attrs[j], attrs[i]
+	}
+
+	var build func([]string) string
+	build = func(list []string) string {
+
+		if len(list) == 1 {
+			return list[0]
+		}
+
+		op := "AND"
+		if randInt(2) == 0 {
+			op = "OR"
+		}
+
+		split := randInt(len(list)-1) + 1 // [1, len-1]
+		left := build(list[:split])
+		right := build(list[split:])
+
+		return "(" + left + " " + op + " " + right + ")"
+	}
+
+	policy := build(attrs)
+
+	if len(policy) > 2 && policy[0] == '(' && policy[len(policy)-1] == ')' {
+		policy = policy[1 : len(policy)-1]
+	}
+
+	return policy
 }
 
 func (pvoabe *PVOABE) Setup() (*big.Int, *PublicKey, *PVGSS.SecretKey, error) {
@@ -69,11 +111,11 @@ type CipherText struct {
 	Cprime *bn256.G2
 	B      *bn256.G1
 	Msp    *abe.MSP
-	symEnc []byte
-	iv     []byte
+	//symEnc []byte
+	//iv     []byte
 }
 
-func (pvoabe *PVOABE) Enc(pk *PublicKey, msg string) (*CipherText, error) {
+func (pvoabe *PVOABE) Enc(pk *PublicKey, attrNum int) (*CipherText, *bn256.GT, error) {
 
 	//s<-Zp,计算B,C',指定访问控制策略，并生成msp矩阵
 	sampler := sample.NewUniformRange(big.NewInt(1), pk.PP.Order)
@@ -82,41 +124,15 @@ func (pvoabe *PVOABE) Enc(pk *PublicKey, msg string) (*CipherText, error) {
 	Cprime := new(bn256.G2).ScalarBaseMult(s)       //C'
 	abeTerm := new(bn256.GT).ScalarMult(pk.Base, s) //e(g,g)^alpha s
 	//生成访问控制策略
-	policy := "Attr1 OR (Attr2 AND Attr3)"
+	//policy := "Attr1 OR (Attr2 AND Attr3)"
+	policy := GeneratePolicy(attrNum)
 	msp, _ := abe.BooleanToMSP(policy, false) //根据访问控制策略构建msp矩阵
 
 	//生成一个随机的GT元素作为对称密钥
 	_, keyGt, err := bn256.RandomGT(rand.Reader)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	//生成AES密钥
-	keyCBC := sha256.Sum256([]byte(keyGt.String()))
-
-	c, err := aes.NewCipher(keyCBC[:])
-	if err != nil {
-		return nil, err
-	}
-
-	iv := make([]byte, c.BlockSize())
-	_, err = io.ReadFull(rand.Reader, iv)
-	if err != nil {
-		return nil, err
-	}
-	encrypterCBC := cbc.NewCBCEncrypter(c, iv)
-
-	msgByte := []byte(msg)
-
-	// msg 按照 PKCS7 标准进行填充
-	padLen := c.BlockSize() - (len(msgByte) % c.BlockSize())
-	msgPad := make([]byte, len(msgByte)+padLen)
-	copy(msgPad, msgByte)
-	for i := len(msgByte); i < len(msgPad); i++ {
-		msgPad[i] = byte(padLen)
-	}
-
-	symEnc := make([]byte, len(msgPad))
-	encrypterCBC.CryptBlocks(symEnc, msgPad)
 	C := new(bn256.GT).Add(keyGt, abeTerm) //C = keyGt · e(h, g)αs
 
 	return &CipherText{
@@ -124,9 +140,9 @@ func (pvoabe *PVOABE) Enc(pk *PublicKey, msg string) (*CipherText, error) {
 		Cprime: Cprime,
 		B:      B,
 		Msp:    msp,
-		symEnc: symEnc,
-		iv:     iv,
-	}, nil
+		//symEnc: symEnc,
+		//iv:     iv,
+	}, keyGt, nil
 }
 
 func (pvoabe *PVOABE) OEnc(pk *PublicKey, B *bn256.G1, msp *abe.MSP) (map[int]*PVGSS.CipherText, error) {
@@ -154,9 +170,9 @@ func (pvoabe *PVOABE) ODecVer(pk *PublicKey, ct map[int]*PVGSS.CipherText, msp *
 	return PVGSS.NewPVGSS().DVerify(pk.PP, ct, msp, OSK, R, Proof)
 }
 
-func (pvoabe *PVOABE) Dec(CT *CipherText, DSK *bn256.G1, R *bn256.GT) (string, error) {
+func (pvoabe *PVOABE) Dec(CT *CipherText, DSK *bn256.G1, R *bn256.GT) (*bn256.GT, error) {
 	if CT.C == nil || DSK == nil || R == nil {
-		return "", fmt.Errorf("nil input")
+		return nil, fmt.Errorf("nil input")
 	}
 
 	// 计算 e(DSK, C')
@@ -172,35 +188,5 @@ func (pvoabe *PVOABE) Dec(CT *CipherText, DSK *bn256.G1, R *bn256.GT) (string, e
 	// 现在计算 keyGT = C / T = C * T^(-1)
 	TInv := new(bn256.GT).Neg(T) // T 的逆元
 	keyGt := new(bn256.GT).Add(CT.C, TInv)
-
-	// 2) 从 keyGt 导出 AES key（与Encrypt 中一致）
-	keyCBC := sha256.Sum256([]byte(keyGt.String()))
-	c, err := aes.NewCipher(keyCBC[:])
-	if err != nil {
-		return "", err
-	}
-
-	// 3) 解密 AES-CBC 得到明文并去 PKCS7 填充
-	if len(CT.iv) != c.BlockSize() {
-		return "", fmt.Errorf("invalid IV length")
-	}
-	if len(CT.symEnc)%c.BlockSize() != 0 {
-		return "", fmt.Errorf("invalid symEnc length")
-	}
-
-	msgPad := make([]byte, len(CT.symEnc))
-	decrypter := cbc.NewCBCDecrypter(c, CT.iv)
-	decrypter.CryptBlocks(msgPad, CT.symEnc)
-
-	// unpad PKCS7
-	padLen := int(msgPad[len(msgPad)-1])
-	if padLen <= 0 || padLen > c.BlockSize() {
-		return "", fmt.Errorf("invalid padding")
-	}
-	if len(msgPad)-padLen < 0 {
-		return "", fmt.Errorf("invalid padding/length")
-	}
-	msg := msgPad[:len(msgPad)-padLen]
-
-	return string(msg), nil
+	return keyGt, nil
 }

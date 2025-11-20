@@ -72,11 +72,7 @@ func (voabe *VOABE) SetUp(U []string) (*pk, *msk) {
 	gb := new(bn256.G1).ScalarMult(g, b)
 	//Hx as a map which attribute as index and G1 elements as value
 	hx := make(map[int]*bn256.G1)
-	//singleAtt := strings.Split(U, " ")
-	// for _, v := range singleAtt {
-	// 	x := HashToG1(v)
-	// 	hx[v] = x
-	// }
+
 	for i := 0; i < len(U); i++ {
 		x := HashToG1(U[i])
 		hx[i] = x
