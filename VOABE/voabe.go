@@ -29,17 +29,17 @@ func NewVOABE() *VOABE {
 }
 
 type pk struct {
-	Order *big.Int          //order
-	G     *bn256.G1         //g
-	G2    *bn256.G2         //g in G2 only for pairing
-	H     *bn256.G1         //h
-	W     *bn256.G1         //w
-	Base  *bn256.GT         //e(g,g)^alpha
-	Base1 *bn256.GT         //e(g,g)^alpha1
-	Ga    *bn256.G1         //g^a
-	Ga2   *bn256.G2         //only for pairing
-	Gb    *bn256.G1         //g^b
-	Hx    map[int]*bn256.G1 //Hx
+	Order *big.Int             //order
+	G     *bn256.G1            //g
+	G2    *bn256.G2            //g in G2 only for pairing
+	H     *bn256.G1            //h
+	W     *bn256.G1            //w
+	Base  *bn256.GT            //e(g,g)^alpha
+	Base1 *bn256.GT            //e(g,g)^alpha1
+	Ga    *bn256.G1            //g^a
+	Ga2   *bn256.G2            //only for pairing
+	Gb    *bn256.G1            //g^b
+	Hx    map[string]*bn256.G1 //Hx
 }
 
 type msk struct {
@@ -53,7 +53,9 @@ func (voabe *VOABE) SetUp(U []string) (*pk, *msk) {
 	sampler := sample.NewUniformRange(big.NewInt(1), voabe.P)
 	alpha, _ := sampler.Sample()
 	alpha1, _ := sampler.Sample()
-	alpha2 := new(big.Int).Sub(alpha, alpha1) //alpha=alpha1+alpha2
+	//alpha2 := new(big.Int).Sub(alpha, alpha1) //alpha=alpha1+alpha2
+	alpha2 := new(big.Int).Sub(alpha, alpha1)
+	alpha2.Mod(alpha2, voabe.P)
 	a, _ := sampler.Sample()
 	b, _ := sampler.Sample()
 
@@ -72,11 +74,13 @@ func (voabe *VOABE) SetUp(U []string) (*pk, *msk) {
 	//g^b
 	gb := new(bn256.G1).ScalarMult(g, b)
 	//Hx as a map which attribute as index and G1 elements as value
-	hx := make(map[int]*bn256.G1)
+	// Hx: map attribute name -> G1 element
+	hx := make(map[string]*bn256.G1)
 
 	for i := 0; i < len(U); i++ {
-		x := HashToG1(U[i])
-		hx[i] = x
+		attr := U[i]
+		x := HashToG1(attr)
+		hx[attr] = x
 	}
 	return &pk{
 			Order: voabe.P,
@@ -112,8 +116,8 @@ type SKcs struct {
 	Lu2  *bn256.G2 //Only for paring
 	Ru   *bn256.G1
 	Ru2  *bn256.G2 //Only for pairing
-	Kux  map[int]*bn256.G1
-	Kux2 map[int]*bn256.G2 //Only for pairing
+	Kux  map[string]*bn256.G1
+	Kux2 map[string]*bn256.G2 //Only for pairing
 }
 
 type Sku struct {
@@ -166,19 +170,21 @@ func (voabe *VOABE) KeyGenU(pk *pk, msk *msk, IDu string, Su []string) (*SKcs, *
 	Ru2 := new(bn256.G2).ScalarMult(pk.G2, invDenom)
 
 	// K{u,x} = hx^{tu}  for x ∈ Su
-	Kux := make(map[int]*bn256.G1)
-	Kux2 := make(map[int]*bn256.G2)
-	for i := 0; i < len(Su); i++ {
-		hx := pk.Hx[i]
-		if hx == nil {
-			log.Fatal("Fail to match hx with su")
+	Kux := make(map[string]*bn256.G1)
+	Kux2 := make(map[string]*bn256.G2)
+	for _, attr := range Su {
+		hx, ok := pk.Hx[attr]
+		if !ok || hx == nil {
+			log.Fatalf("Fail to match hx with attribute %s", attr)
 		}
-		Kux[i] = new(bn256.G1).ScalarMult(hx, t)
+		// K_{u,x} in G1
+		Kux[attr] = new(bn256.G1).ScalarMult(hx, t)
 
-		exp := HashToBigInt(Su[i])
+		// K_{u,x} in G2 = (hash(attr)·G2)^t
+		exp := HashToBigInt(attr)
 		exp.Mod(exp, voabe.P)
 		hx2 := new(bn256.G2).ScalarMult(pk.G2, exp)
-		Kux2[i] = new(bn256.G2).ScalarMult(hx2, t) // hx^{t} in G2
+		Kux2[attr] = new(bn256.G2).ScalarMult(hx2, t) // hx^{t} in G2
 	}
 	// sku = g^{α2} g^{a tu}
 	b1 := new(bn256.G1).ScalarMult(pk.G, msk.alpha2)
@@ -339,11 +345,16 @@ func (voabe *VOABE) EncCS(pk *pk, cph *Cph, pkPV *bn256.G1) *CPh {
 		if i < 0 || i >= len(cph.MSP.RowToAttrib) {
 			log.Fatalf("MSP.RowToAttrib index %d out of range", i)
 		}
+		attr := cph.MSP.RowToAttrib[i]
+		hx, ok := pk.Hx[attr]
+		if !ok || hx == nil {
+			log.Fatalf("no hx for attribute %s", attr)
+		}
 
 		riNeg := new(big.Int).Sub(voabe.P, ri)
 		riNeg.Mod(riNeg, voabe.P)
 
-		term2 := new(bn256.G1).ScalarMult(pk.Hx[i], riNeg)
+		term2 := new(bn256.G1).ScalarMult(hx, riNeg)
 
 		// term3 = pkPV^{- ri}
 		term3 := new(bn256.G1).ScalarMult(pkPV, riNeg)
@@ -437,10 +448,16 @@ func (voabe *VOABE) GenProofForPV(pk *pk, skDOcs *SKcs, cph *CPh, IDDO string, S
 	first := true
 
 	for i := 0; i < len(SDoStar); i++ {
-		Kux := skDOcs.Kux[i]
-		hx := pk.Hx[i]
-		if hx == nil {
-			return nil, fmt.Errorf("hx for attr %s not found in pk.Hx", SDoStar[i])
+		attr := SDoStar[i]
+
+		Kux, ok := skDOcs.Kux[attr]
+		if !ok || Kux == nil {
+			return nil, fmt.Errorf("Kux for attr %s not found in skDOcs", attr)
+		}
+
+		hx, ok := pk.Hx[attr]
+		if !ok || hx == nil {
+			return nil, fmt.Errorf("hx for attr %s not found in pk.Hx", attr)
 		}
 		// hx^t
 		hxt := new(bn256.G1).ScalarMult(hx, t)
@@ -565,8 +582,9 @@ func (voabe *VOABE) VerifyProofSymmetric(pk *pk, cph *CPh, proof *Proof, IDDO st
 	prodHx := new(bn256.G1).ScalarMult(pk.G, big.NewInt(0))
 	first := true
 	for i := 0; i < len(proof.SDoStar); i++ {
-		hx := pk.Hx[i]
-		if hx == nil {
+		attr := proof.SDoStar[i]
+		hx, ok := pk.Hx[attr]
+		if !ok || hx == nil {
 			// att dont match
 			return false
 		}
@@ -613,7 +631,6 @@ func (voabe *VOABE) Sanitize(pk *pk, skPV *big.Int, cph *CPh) *CPh {
 		log.Printf("Warning: sanitize randomness sampling failed, using 0")
 		r = big.NewInt(0)
 	}
-
 	// rNeg = -r mod p
 	rNeg := new(big.Int).Neg(r)
 	rNeg.Mod(rNeg, voabe.P)
@@ -661,9 +678,10 @@ func (voabe *VOABE) Sanitize(pk *pk, skPV *big.Int, cph *CPh) *CPh {
 		if i < 0 || i >= len(cph.MSP.RowToAttrib) {
 			log.Fatalf("MSP.RowToAttrib index %d out of range", i)
 		}
-		hx, ok := pk.Hx[i]
+		attr := cph.MSP.RowToAttrib[i]
+		hx, ok := pk.Hx[attr]
 		if !ok || hx == nil {
-			log.Fatalf("no hx for attribute %s", cph.MSP.RowToAttrib[i])
+			log.Fatalf("no hx for attribute %s", attr)
 		}
 
 		// h{ρ(i)}^{-r}
@@ -693,33 +711,13 @@ func (voabe *VOABE) Sanitize(pk *pk, skPV *big.Int, cph *CPh) *CPh {
 
 // DecCS:CS uses skCS to outsource decryption of the sanitize ciphertext cph
 func (voabe *VOABE) DecCS(pk *pk, cph *CPh, skCS *SKcs, SDU []string) (*bn256.GT, error) {
-	attrSet := make(map[int]bool)
-	for i := 0; i < len(SDU); i++ {
-		attrSet[i] = true
-	}
 
-	//Find I = { i | ρ(i) ∈ SDU }
-	var I []int
-	for i, _ := range cph.MSP.RowToAttrib {
-		if attrSet[i] {
-			I = append(I, i)
-		}
-	}
-	if len(I) == 0 {
-		return nil, fmt.Errorf("DecCS: SDU does not satisfy Γ (no matching rows)")
-	}
-
-	//Through MSP reconstruction coefficient wi, automatically find out I and the corresponding wi (mod p) according to msp and SDU
 	wMap, err := LSSS.ReconstructCoefficients(cph.MSP, SDU, voabe.P)
 	if err != nil {
 		return nil, fmt.Errorf("DecCS: reconstruct coefficients failed: %v", err)
 	}
-
-	//Confirm that each i in I has a corresponding wi
-	for _, i := range I {
-		if _, ok := wMap[i]; !ok {
-			return nil, fmt.Errorf("DecCS: missing wi for row %d", i)
-		}
+	if len(wMap) == 0 {
+		return nil, fmt.Errorf("DecCS: SDU does not satisfy Γ (empty wMap)")
 	}
 
 	//Compute term1 = e(C', KDU) = Pair(CPrime, Ku2)
@@ -740,8 +738,7 @@ func (voabe *VOABE) DecCS(pk *pk, cph *CPh, skCS *SKcs, SDU []string) (*bn256.GT
 	egg := bn256.Pair(pk.G, pk.G2)
 	prod := new(bn256.GT).ScalarMult(egg, big.NewInt(0))
 	first := true
-	for _, i := range I {
-		wi := wMap[i]
+	for i, wi := range wMap {
 
 		// e(Ci, LDU) → Pair(Ci, Lu2)
 		eCiL := bn256.Pair(cph.Ci[i], skCS.Lu2)
@@ -750,9 +747,10 @@ func (voabe *VOABE) DecCS(pk *pk, cph *CPh, skCS *SKcs, SDU []string) (*bn256.GT
 			return nil, fmt.Errorf("DecCS: MSP.RowToAttrib index %d out of range", i)
 		}
 
-		kux2, ok := skCS.Kux2[i]
+		attr := cph.MSP.RowToAttrib[i]
+		kux2, ok := skCS.Kux2[attr]
 		if !ok || kux2 == nil {
-			return nil, fmt.Errorf("DecCS: no Kux2 for attribute %s", cph.MSP.RowToAttrib[i])
+			return nil, fmt.Errorf("DecCS: no Kux2 for attribute %s", attr)
 		}
 
 		eDiK := bn256.Pair(cph.Di[i], kux2)
