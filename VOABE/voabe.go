@@ -29,17 +29,20 @@ func NewVOABE() *VOABE {
 }
 
 type pk struct {
-	Order *big.Int             //order
-	G     *bn256.G1            //g
-	G2    *bn256.G2            //g in G2 only for pairing
-	H     *bn256.G1            //h
-	W     *bn256.G1            //w
-	Base  *bn256.GT            //e(g,g)^alpha
-	Base1 *bn256.GT            //e(g,g)^alpha1
-	Ga    *bn256.G1            //g^a
-	Ga2   *bn256.G2            //only for pairing
-	Gb    *bn256.G1            //g^b
-	Hx    map[string]*bn256.G1 //Hx
+	Order *big.Int  //order
+	G     *bn256.G1 //g
+	G2    *bn256.G2 //g in G2 only for pairing
+	H     *bn256.G1 //h
+	W     *bn256.G1 //w
+	WG2   *bn256.G2 //w
+	Base  *bn256.GT //e(g,g)^alpha
+	Base1 *bn256.GT //e(g,g)^alpha1
+	Ga    *bn256.G1 //g^a
+	//Ga2   *bn256.G2            //only for pairing
+	Gb   *bn256.G1            //g^b
+	G2b  *bn256.G2            //g2^b
+	Hx   map[string]*bn256.G1 //Hx
+	HxG2 map[string]*bn256.G2 //Hx
 }
 
 type msk struct {
@@ -59,9 +62,10 @@ func (voabe *VOABE) SetUp(U []string) (*pk, *msk) {
 	a, _ := sampler.Sample()
 	b, _ := sampler.Sample()
 
-	g := new(bn256.G1).ScalarBaseMult(big.NewInt(1)) //g
-	h := new(bn256.G1).ScalarBaseMult(big.NewInt(1)) //h
-	w := new(bn256.G1).ScalarBaseMult(big.NewInt(1)) //w
+	g := new(bn256.G1).ScalarBaseMult(big.NewInt(1))   //g
+	h := new(bn256.G1).ScalarBaseMult(big.NewInt(2))   //h
+	w := new(bn256.G1).ScalarBaseMult(big.NewInt(3))   //w
+	wG2 := new(bn256.G2).ScalarBaseMult(big.NewInt(3)) //wG2
 
 	//g1:e(g,g)^alpha->e(g,g1)^alpha,only for pairing
 	g2 := new(bn256.G2).ScalarBaseMult(big.NewInt(1))
@@ -70,17 +74,22 @@ func (voabe *VOABE) SetUp(U []string) (*pk, *msk) {
 	base1 := new(bn256.GT).ScalarMult(pair, alpha1)
 	//g^a
 	ga := new(bn256.G1).ScalarMult(g, a)
-	ga2 := new(bn256.G2).ScalarMult(g2, a)
+	//ga2 := new(bn256.G2).ScalarMult(g2, a)
 	//g^b
 	gb := new(bn256.G1).ScalarMult(g, b)
+	g2b := new(bn256.G2).ScalarMult(g2, b)
 	//Hx as a map which attribute as index and G1 elements as value
 	// Hx: map attribute name -> G1 element
 	hx := make(map[string]*bn256.G1)
+	hxG2 := make(map[string]*bn256.G2)
 
 	for i := 0; i < len(U); i++ {
 		attr := U[i]
-		x := HashToG1(attr)
-		hx[attr] = x
+		ri, _ := sampler.Sample()
+		//x := HashToG1(attr)
+		//hx[attr] = x
+		hx[attr] = new(bn256.G1).ScalarBaseMult(ri)
+		hxG2[attr] = new(bn256.G2).ScalarBaseMult(ri)
 	}
 	return &pk{
 			Order: voabe.P,
@@ -88,41 +97,45 @@ func (voabe *VOABE) SetUp(U []string) (*pk, *msk) {
 			G2:    g2,
 			H:     h,
 			W:     w,
+			WG2:   wG2,
 			Base:  base,
 			Base1: base1,
 			Ga:    ga,
-			Ga2:   ga2,
-			Gb:    gb,
-			Hx:    hx,
+			//Ga2:   ga2,
+			Gb:   gb,
+			G2b:  g2b,
+			Hx:   hx,
+			HxG2: hxG2,
 		}, &msk{
 			alpha: alpha, alpha1: alpha1, alpha2: alpha2, b: b,
 		}
 }
 
-func (voabe *VOABE) KeyGenPV(pk *pk, msk *msk) (pkPV *bn256.G1, skPV *big.Int) {
+func (voabe *VOABE) KeyGenPV(pk *pk, msk *msk) (pkPV *bn256.G1, pkPVG2 *bn256.G2, skPV *big.Int) {
 	//c ∈ Z∗p
 	sampler := sample.NewUniformRange(big.NewInt(1), voabe.P)
 	c, _ := sampler.Sample()
 	//pkPV=g^c
 	pkPV = new(bn256.G1).ScalarMult(pk.G, c)
+	pkPVG2 = new(bn256.G2).ScalarMult(pk.G2, c)
 	//skPV=c
-	return pkPV, c
+	return pkPV, pkPVG2, c
 }
 
 type SKcs struct {
-	Ku   *bn256.G1
-	Ku2  *bn256.G2 //Only for pairing
-	Lu   *bn256.G1
-	Lu2  *bn256.G2 //Only for paring
-	Ru   *bn256.G1
-	Ru2  *bn256.G2 //Only for pairing
-	Kux  map[string]*bn256.G1
+	Ku *bn256.G1
+	//Ku2  *bn256.G2 //Only for pairing
+	//Lu   *bn256.G1
+	Lu2 *bn256.G2 //Only for paring
+	Ru  *bn256.G1
+	//Ru2 *bn256.G2 //Only for pairing
+	//Kux  map[string]*bn256.G1
 	Kux2 map[string]*bn256.G2 //Only for pairing
 }
 
 type Sku struct {
-	Sku  *bn256.G1
-	Sku2 *bn256.G2 //Only for pairing
+	Sku *bn256.G1
+	//Sku2 *bn256.G2 //Only for pairing
 }
 
 // string -> big.Int
@@ -155,22 +168,22 @@ func (voabe *VOABE) KeyGenU(pk *pk, msk *msk, IDu string, Su []string) (*SKcs, *
 	Ku.Add(Ku, tmpW)
 
 	// Ku2 = g2^{α1} g2^{a tu} w2^{1/(b+H(IDu))}
-	Ku2 := new(bn256.G2).ScalarMult(pk.G2, msk.alpha1)
-	tmp2 := new(bn256.G2).ScalarMult(pk.Ga2, t)
-	Ku2.Add(Ku2, tmp2)
-	tmpW2 := new(bn256.G2).ScalarMult(pk.G2, invDenom)
-	Ku2.Add(Ku2, tmpW2)
+	// Ku2 := new(bn256.G2).ScalarMult(pk.G2, msk.alpha1)
+	// tmp2 := new(bn256.G2).ScalarMult(pk.Ga2, t)
+	// Ku2.Add(Ku2, tmp2)
+	// tmpW2 := new(bn256.G2).ScalarMult(pk.G2, invDenom)
+	// Ku2.Add(Ku2, tmpW2)
 
 	// Lu = g^{tu}
-	Lu := new(bn256.G1).ScalarMult(pk.G, t)
+	//Lu := new(bn256.G1).ScalarMult(pk.G, t)
 	Lu2 := new(bn256.G2).ScalarMult(pk.G2, t)
 
 	// Ru = g^{1/(b+H(IDu))}
 	Ru := new(bn256.G1).ScalarMult(pk.G, invDenom)
-	Ru2 := new(bn256.G2).ScalarMult(pk.G2, invDenom)
+	//Ru2 := new(bn256.G2).ScalarMult(pk.G2, invDenom)
 
 	// K{u,x} = hx^{tu}  for x ∈ Su
-	Kux := make(map[string]*bn256.G1)
+	//Kux := make(map[string]*bn256.G1)
 	Kux2 := make(map[string]*bn256.G2)
 	for _, attr := range Su {
 		hx, ok := pk.Hx[attr]
@@ -178,13 +191,14 @@ func (voabe *VOABE) KeyGenU(pk *pk, msk *msk, IDu string, Su []string) (*SKcs, *
 			log.Fatalf("Fail to match hx with attribute %s", attr)
 		}
 		// K_{u,x} in G1
-		Kux[attr] = new(bn256.G1).ScalarMult(hx, t)
+		//Kux[attr] = new(bn256.G1).ScalarMult(hx, t)
 
 		// K_{u,x} in G2 = (hash(attr)·G2)^t
-		exp := HashToBigInt(attr)
-		exp.Mod(exp, voabe.P)
-		hx2 := new(bn256.G2).ScalarMult(pk.G2, exp)
-		Kux2[attr] = new(bn256.G2).ScalarMult(hx2, t) // hx^{t} in G2
+		// exp := HashToBigInt(attr)
+		// exp.Mod(exp, voabe.P)
+		// hx2 := new(bn256.G2).ScalarMult(pk.G2, exp)
+		// Kux2[attr] = new(bn256.G2).ScalarMult(hx2, t) // hx^{t} in G2
+		Kux2[attr] = new(bn256.G2).ScalarMult(pk.HxG2[attr], t)
 	}
 	// sku = g^{α2} g^{a tu}
 	b1 := new(bn256.G1).ScalarMult(pk.G, msk.alpha2)
@@ -192,24 +206,24 @@ func (voabe *VOABE) KeyGenU(pk *pk, msk *msk, IDu string, Su []string) (*SKcs, *
 	SkUser := new(bn256.G1).Add(b1, b2)
 
 	// sku(G2)
-	b1_2 := new(bn256.G2).ScalarMult(pk.G2, msk.alpha2)
-	b2_2 := new(bn256.G2).ScalarMult(pk.Ga2, t)
-	SkUserG2 := new(bn256.G2).Add(b1_2, b2_2)
+	// b1_2 := new(bn256.G2).ScalarMult(pk.G2, msk.alpha2)
+	// b2_2 := new(bn256.G2).ScalarMult(pk.Ga2, t)
+	//SkUserG2 := new(bn256.G2).Add(b1_2, b2_2)
 
 	csKey := &SKcs{
-		Ku:   Ku,
-		Ku2:  Ku2,
-		Lu:   Lu,
-		Lu2:  Lu2,
-		Ru:   Ru,
-		Ru2:  Ru2,
-		Kux:  Kux,
+		Ku: Ku,
+		//Ku2:  Ku2,
+		//Lu:   Lu,
+		Lu2: Lu2,
+		Ru:  Ru,
+		//Ru2: Ru2,
+		//Kux:  Kux,
 		Kux2: Kux2,
 	}
 
 	userKey := &Sku{
-		Sku:  SkUser,
-		Sku2: SkUserG2,
+		Sku: SkUser,
+		//Sku2: SkUserG2,
 	}
 
 	return csKey, userKey
@@ -218,14 +232,14 @@ func (voabe *VOABE) KeyGenU(pk *pk, msk *msk, IDu string, Su []string) (*SKcs, *
 // Intermediate ciphertexts
 type Cph struct {
 	//CR      []byte           // CR = Enc{KR}(R)
-	C       *bn256.GT        // C  ∈ GT
-	CPrime  *bn256.G1        // C' ∈ G1
-	CSecond *bn256.G1        // C'' ∈ G1
-	Lambdas map[int]*big.Int // {λi}
-	MSP     *abe.MSP         // access structure
+	C        *bn256.GT        // C  ∈ GT
+	CPrime2  *bn256.G2        // C' ∈ G2
+	CSecond2 *bn256.G2        // C'' ∈ G2
+	Lambdas  map[int]*big.Int // {λi}
+	MSP      *abe.MSP         // access structure
 }
 
-func GeneratePolicy(attrCount int) string {
+func GeneratePolicy(attrCount int) ([]string, string) {
 
 	attrs := make([]string, attrCount)
 	for i := 0; i < attrCount; i++ {
@@ -267,11 +281,11 @@ func GeneratePolicy(attrCount int) string {
 		policy = policy[1 : len(policy)-1]
 	}
 
-	return policy
+	return attrs, policy
 }
 
 // EncDo encrypt the record R by access structure Γ and send the intermediate ciphertexts to CS
-func (voave *VOABE) EncDo(pk *pk, pkPV *bn256.G1, attrNum int) (*Cph, *bn256.GT) {
+func (voave *VOABE) EncDo(pk *pk, pkPV *bn256.G1, pkPVG2 *bn256.G2, attrNum int) (*Cph, []string) {
 	//Generate symmetric key KR
 	sampler := sample.NewUniformRange(big.NewInt(1), voave.P)
 	k, _ := sampler.Sample()
@@ -280,8 +294,8 @@ func (voave *VOABE) EncDo(pk *pk, pkPV *bn256.G1, attrNum int) (*Cph, *bn256.GT)
 	//λi = Mi · v
 	s, _ := sampler.Sample()
 
-	policy := GeneratePolicy(attrNum)
-	fmt.Printf("Policy=%v\n", policy)
+	policySet, policy := GeneratePolicy(attrNum)
+	//fmt.Printf("Policy=%v\n", policy)
 	msp, _ := abe.BooleanToMSP(policy, false) //根据访问控制策略构建msp矩阵
 	Lambdai, _ := LSSS.Share(msp, s, voave.P)
 
@@ -298,21 +312,21 @@ func (voave *VOABE) EncDo(pk *pk, pkPV *bn256.G1, attrNum int) (*Cph, *bn256.GT)
 	C.Add(C, C2)
 
 	//C' = g^s
-	CPrime := new(bn256.G1).ScalarMult(pk.G, s)
+	CPrime2 := new(bn256.G2).ScalarMult(pk.G2, s)
 
 	//C'' = w^s pkPV^s
-	ws := new(bn256.G1).ScalarMult(pk.W, s)
-	pvs := new(bn256.G1).ScalarMult(pkPV, s)
-	CSecond := new(bn256.G1).Add(ws, pvs)
+	ws := new(bn256.G2).ScalarMult(pk.WG2, s)
+	pvs := new(bn256.G2).ScalarMult(pkPVG2, s)
+	CSecond2 := new(bn256.G2).Add(ws, pvs)
 
 	return &Cph{
 		//CR:      CR,
-		C:       C,
-		CPrime:  CPrime,
-		CSecond: CSecond,
-		Lambdas: Lambdai,
-		MSP:     msp,
-	}, KR
+		C:        C,
+		CPrime2:  CPrime2,
+		CSecond2: CSecond2,
+		Lambdas:  Lambdai,
+		MSP:      msp,
+	}, policySet
 }
 
 // Final ciphertext
@@ -376,19 +390,19 @@ func (voabe *VOABE) EncCS(pk *pk, cph *Cph, pkPV *bn256.G1) *CPh {
 
 // CS generate proof
 type Proof struct {
-	KDoPrime     *bn256.G1 // K'DO
-	LDoPrime     *bn256.G1 // L'DO
-	LDoPrime2    *bn256.G2 //Only for pairing
-	RDoPrime     *bn256.G1 // R'DO
-	RDoPrime2    *bn256.G2 //Only for pairing
-	ProdKDoPrime *bn256.G1 // ∏{x∈S*DO} K'{DO,x}
-	A1           *bn256.G1 // A1
+	KDoPrime *bn256.G1 // K'DO
+	//LDoPrime     *bn256.G1 // L'DO
+	LDoPrime2 *bn256.G2 //Only for pairing
+	RDoPrime  *bn256.G1 // R'DO
+	//RDoPrime2    *bn256.G2 //Only for pairing
+	ProdKDoPrime *bn256.G2 // ∏{x∈S*DO} K'{DO,x}
+	A1           *bn256.G2 // A1
 	A2           *bn256.G2 // A2
-	A3           *bn256.G1 // A3
-	A4           *bn256.G1 // A4
+	A3           *bn256.G2 // A3
+	A4           *bn256.G2 // A4
 	A5           *bn256.GT // A5
-	A6           *bn256.G1 // A6
-	A6_2         *bn256.G2 //Only for pairing
+	//A6           *bn256.G2 // A6
+	A6_2 *bn256.G2 //Only for pairing
 
 	SDoStar []string // S*_DO：PV send the sub attribute set to CS
 }
@@ -400,8 +414,8 @@ func HashCphToScalar(cph *CPh, p *big.Int) *big.Int {
 	//Put CR, C, C', C'' to hash
 	//h.Write(cph.CR)
 	h.Write(cph.C.Marshal())
-	h.Write(cph.CPrime.Marshal())
-	h.Write(cph.CSecond.Marshal())
+	h.Write(cph.CPrime2.Marshal())
+	h.Write(cph.CSecond2.Marshal())
 	if cph.C0 != nil {
 		h.Write(cph.C0.Marshal())
 	}
@@ -437,32 +451,32 @@ func (voabe *VOABE) GenProofForPV(pk *pk, skDOcs *SKcs, cph *CPh, IDDO string, S
 	KDoPrime := new(bn256.G1).Add(skDOcs.Ku, gat)
 
 	//L'DO = LDO · g^t
-	gt := new(bn256.G1).ScalarMult(pk.G, t)
+	//gt := new(bn256.G1).ScalarMult(pk.G, t)
 	gt2 := new(bn256.G2).ScalarMult(pk.G2, t)
-	LDoPrime := new(bn256.G1).Add(skDOcs.Lu, gt)
+	//LDoPrime := new(bn256.G1).Add(skDOcs.Lu, gt)
 	LDoPrime2 := new(bn256.G2).Add(skDOcs.Lu2, gt2)
 
 	//∏_{x∈S*_DO} K'_{DO,x} = ∏ (K_{DO,x} · h_x^t)
 	// Initialize the product as the group identity: g^0
-	prodK := new(bn256.G1).ScalarMult(pk.G, big.NewInt(0))
+	prodK := new(bn256.G2).ScalarMult(pk.G2, big.NewInt(0))
 	first := true
 
 	for i := 0; i < len(SDoStar); i++ {
 		attr := SDoStar[i]
 
-		Kux, ok := skDOcs.Kux[attr]
-		if !ok || Kux == nil {
+		Kux2, ok := skDOcs.Kux2[attr]
+		if !ok || Kux2 == nil {
 			return nil, fmt.Errorf("Kux for attr %s not found in skDOcs", attr)
 		}
 
-		hx, ok := pk.Hx[attr]
-		if !ok || hx == nil {
+		hxG2, ok := pk.HxG2[attr]
+		if !ok || hxG2 == nil {
 			return nil, fmt.Errorf("hx for attr %s not found in pk.Hx", attr)
 		}
 		// hx^t
-		hxt := new(bn256.G1).ScalarMult(hx, t)
+		hxtG2 := new(bn256.G2).ScalarMult(hxG2, t)
 		// K'{DO,x} = K{DO,x} · hx^t
-		KDoPrimeX := new(bn256.G1).Add(Kux, hxt)
+		KDoPrimeX := new(bn256.G2).Add(Kux2, hxtG2)
 
 		if first {
 			prodK.Set(KDoPrimeX)
@@ -474,7 +488,7 @@ func (voabe *VOABE) GenProofForPV(pk *pk, skDOcs *SKcs, cph *CPh, IDDO string, S
 
 	//R'DO = RDO^z
 	RDoPrime := new(bn256.G1).ScalarMult(skDOcs.Ru, z)
-	RDoPrime2 := new(bn256.G2).ScalarMult(skDOcs.Ru2, z)
+	//RDoPrime2 := new(bn256.G2).ScalarMult(skDOcs.Ru2, z)
 
 	//Prepare 1/z
 	invZ := new(big.Int).ModInverse(z, voabe.P)
@@ -490,44 +504,44 @@ func (voabe *VOABE) GenProofForPV(pk *pk, skDOcs *SKcs, cph *CPh, IDDO string, S
 	HIDOverZ.Mod(HIDOverZ, voabe.P)
 
 	//A1 = (L'DO)^{H(cph)} w^y
-	LDoPrimeExp := new(bn256.G1).ScalarMult(LDoPrime, Hcph)
-	wy := new(bn256.G1).ScalarMult(pk.W, y)
-	A1 := new(bn256.G1).Add(LDoPrimeExp, wy)
+	LDoPrimeExp := new(bn256.G2).ScalarMult(LDoPrime2, Hcph)
+	wy := new(bn256.G2).ScalarMult(pk.WG2, y)
+	A1 := new(bn256.G2).Add(LDoPrimeExp, wy)
 
 	//A2 = g^y
 	A2 := new(bn256.G2).ScalarMult(pk.G2, y)
 
 	//A3 = w^{1/z}
-	A3 := new(bn256.G1).ScalarMult(pk.W, invZ)
+	A3 := new(bn256.G2).ScalarMult(pk.WG2, invZ)
 
 	//A4 = g^{b/z} g^{H(ID_DO)/z}
-	gbOverZ := new(bn256.G1).ScalarMult(pk.Gb, invZ) // (g^b)^{1/z} = g^{b/z}
-	gHIDOverZ := new(bn256.G1).ScalarMult(pk.G, HIDOverZ)
-	A4 := new(bn256.G1).Add(gbOverZ, gHIDOverZ)
+	gbOverZ := new(bn256.G2).ScalarMult(pk.G2b, invZ) // (g^b)^{1/z} = g^{b/z}
+	gHIDOverZ := new(bn256.G2).ScalarMult(pk.G2, HIDOverZ)
+	A4 := new(bn256.G2).Add(gbOverZ, gHIDOverZ)
 
 	//A5 = e(g,g)^{H(ID_DO)/z}
 	egg := bn256.Pair(pk.G, pk.G2) // e(g,g)
 	A5 := new(bn256.GT).ScalarMult(egg, HIDOverZ)
 
 	//A6 = g^{1/z}
-	A6 := new(bn256.G1).ScalarMult(pk.G, invZ)
+	//A6 := new(bn256.G1).ScalarMult(pk.G, invZ)
 	A6_2 := new(bn256.G2).ScalarMult(pk.G2, invZ)
 
 	proof := &Proof{
-		KDoPrime:     KDoPrime,
-		LDoPrime:     LDoPrime,
-		LDoPrime2:    LDoPrime2,
-		RDoPrime:     RDoPrime,
-		RDoPrime2:    RDoPrime2,
+		KDoPrime: KDoPrime,
+		//LDoPrime:     LDoPrime,
+		LDoPrime2: LDoPrime2,
+		RDoPrime:  RDoPrime,
+		//RDoPrime2:    RDoPrime2,
 		ProdKDoPrime: prodK,
 		A1:           A1,
 		A2:           A2,
 		A3:           A3,
 		A4:           A4,
 		A5:           A5,
-		A6:           A6,
-		A6_2:         A6_2,
-		SDoStar:      SDoStar,
+		//A6:           A6,
+		A6_2:    A6_2,
+		SDoStar: SDoStar,
 	}
 
 	return proof, nil
@@ -544,36 +558,40 @@ func (voabe *VOABE) VerifyProofSymmetric(pk *pk, cph *CPh, proof *Proof, IDDO st
 
 	right1 := new(bn256.GT).Set(pk.Base1) // e(g,g)^α1
 	//multiply e(L'DO, g^a)
-	termL := bn256.Pair(proof.LDoPrime, pk.Ga2)
+	termL := bn256.Pair(pk.Ga, proof.LDoPrime2)
 	right1.Add(right1, termL)
 	//multiply e(R'DO, A3)
-	termR := bn256.Pair(proof.A3, proof.RDoPrime2)
+	termR := bn256.Pair(proof.RDoPrime, proof.A3)
 	right1.Add(right1, termR)
 
 	if left1.String() != right1.String() {
+		fmt.Printf("Eq1 is false!\n")
 		return false
 	}
 
 	//2. e(A3, g) == e(w, A6)
-	left2 := bn256.Pair(proof.A3, pk.G2)
+	left2 := bn256.Pair(pk.G, proof.A3)
 	right2 := bn256.Pair(pk.W, proof.A6_2)
 	if left2.String() != right2.String() {
+		fmt.Printf("Eq2 is false!\n")
 		return false
 	}
 
 	//3. e(A4, g) == e(g^b, A6) · A5
-	left3 := bn256.Pair(proof.A4, pk.G2)
+	left3 := bn256.Pair(pk.G, proof.A4)
 
 	right3 := bn256.Pair(pk.Gb, proof.A6_2)
 	right3.Add(right3, proof.A5) //Add A5
 	if left3.String() != right3.String() {
+		fmt.Printf("Eq3 is false!\n")
 		return false
 	}
 
 	//4. e(R'DO, A4) == e(g,g)
 	egg := bn256.Pair(pk.G, pk.G2) // e(g,g)
-	left4 := bn256.Pair(proof.A4, proof.RDoPrime2)
+	left4 := bn256.Pair(proof.RDoPrime, proof.A4)
 	if left4.String() != egg.String() {
+		fmt.Printf("Eq4 is false!\n")
 		return false
 	}
 
@@ -596,17 +614,18 @@ func (voabe *VOABE) VerifyProofSymmetric(pk *pk, cph *CPh, proof *Proof, IDDO st
 		}
 	}
 
-	left5 := bn256.Pair(proof.ProdKDoPrime, pk.G2)
+	left5 := bn256.Pair(pk.G, proof.ProdKDoPrime)
 	right5 := bn256.Pair(prodHx, proof.LDoPrime2)
 	if left5.String() != right5.String() {
+		fmt.Printf("Eq5 is false!\n")
 		return false
 	}
 
 	// 6. e(A1, g) == e(L'DO, g)^{H(cph)} · e(A2, w)
-	left6 := bn256.Pair(proof.A1, pk.G2)
+	left6 := bn256.Pair(pk.G, proof.A1)
 
 	// e(L'DO, g)^{H(cph)}
-	baseLg := bn256.Pair(proof.LDoPrime, pk.G2)
+	baseLg := bn256.Pair(pk.G, proof.LDoPrime2)
 	termLg := new(bn256.GT).ScalarMult(baseLg, Hcph)
 
 	// e(A2, w)
@@ -615,6 +634,7 @@ func (voabe *VOABE) VerifyProofSymmetric(pk *pk, cph *CPh, proof *Proof, IDDO st
 	right6 := new(bn256.GT).Add(termLg, termAw)
 
 	if left6.String() != right6.String() {
+		fmt.Printf("Eq6 is false!\n")
 		return false
 	}
 
@@ -642,7 +662,7 @@ func (voabe *VOABE) Sanitize(pk *pk, skPV *big.Int, cph *CPh) *CPh {
 	C0 := new(bn256.G1).ScalarMult(pk.Ga, r)
 
 	//Update Cnew = C · e(g, C')^{-c} · e(g,g)^{α r}
-	pairGCPrime := bn256.Pair(cph.CPrime, pk.G2)                //e(g, C')
+	pairGCPrime := bn256.Pair(pk.G, cph.CPrime2)                //e(g, C')
 	termPairNegC := new(bn256.GT).ScalarMult(pairGCPrime, cNeg) // e(g, C')^{-c}
 	termAlphaR := new(bn256.GT).ScalarMult(pk.Base, r)          // e(g,g)^{α r}
 
@@ -650,15 +670,16 @@ func (voabe *VOABE) Sanitize(pk *pk, skPV *big.Int, cph *CPh) *CPh {
 	Cnew.Add(Cnew, termAlphaR)
 
 	//Compute (C')^{-c} for  C'' （before update C'）
-	termCPrimeNegC := new(bn256.G1).ScalarMult(cph.CPrime, cNeg) // (C')^{-c}
+	termCPrimeNegC := new(bn256.G2).ScalarMult(cph.CPrime2, cNeg) // (C')^{-c}
 
 	//C'new = C' * g^r = g^s * g^r = g^{s+r}
 	gr := new(bn256.G1).ScalarMult(pk.G, r)
-	CPrimeNew := new(bn256.G1).Add(cph.CPrime, gr)
+	grG2 := new(bn256.G2).ScalarMult(pk.G2, r)
+	CPrimeNew := new(bn256.G2).Add(cph.CPrime2, grG2)
 
 	//Update C'' = C'' · (C')^{-c} · w^{r}
-	wr := new(bn256.G1).ScalarMult(pk.W, r)
-	CSecondNew := new(bn256.G1).Add(cph.CSecond, termCPrimeNegC)
+	wr := new(bn256.G2).ScalarMult(pk.WG2, r)
+	CSecondNew := new(bn256.G2).Add(cph.CSecond2, termCPrimeNegC)
 	CSecondNew.Add(CSecondNew, wr)
 
 	//Update Ci, Di
@@ -701,8 +722,8 @@ func (voabe *VOABE) Sanitize(pk *pk, skPV *big.Int, cph *CPh) *CPh {
 	//Write back to the original cph structure
 	cph.C0 = C0
 	cph.C = Cnew
-	cph.CPrime = CPrimeNew
-	cph.CSecond = CSecondNew
+	cph.CPrime2 = CPrimeNew
+	cph.CSecond2 = CSecondNew
 	cph.Ci = CiNewMap
 	cph.Di = DiNewMap
 
@@ -721,13 +742,14 @@ func (voabe *VOABE) DecCS(pk *pk, cph *CPh, skCS *SKcs, SDU []string) (*bn256.GT
 	}
 
 	//Compute term1 = e(C', KDU) = Pair(CPrime, Ku2)
-	term1 := bn256.Pair(cph.CPrime, skCS.Ku2)
+	term1 := bn256.Pair(skCS.Ku, cph.CPrime2)
 
 	//Compute term2 = e(RDU, C'')-> Pair(C'', Ru2)
-	term2 := bn256.Pair(cph.CSecond, skCS.Ru2)
+	term2 := bn256.Pair(skCS.Ru, cph.CSecond2)
 	//term2^{-1} = term2^{p-1}
-	minusOne := new(big.Int).Sub(voabe.P, big.NewInt(1))
-	term2Inv := new(bn256.GT).ScalarMult(term2, minusOne)
+	//minusOne := new(big.Int).Sub(voabe.P, big.NewInt(1))
+	//term2Inv := new(bn256.GT).ScalarMult(term2, minusOne)
+	term2Inv := new(bn256.GT).Neg(term2)
 
 	// tmp = e(C',KDU) * e(RDU,C'')^{-1}
 	tmp := new(bn256.GT).Add(term1, term2Inv)
@@ -775,7 +797,7 @@ func (voabe *VOABE) DecCS(pk *pk, cph *CPh, skCS *SKcs, SDU []string) (*bn256.GT
 	two := big.NewInt(2)
 	prodSquared := new(bn256.GT).ScalarMult(prod, two)
 
-	prodSquaredInv := new(bn256.GT).ScalarMult(prodSquared, minusOne)
+	prodSquaredInv := new(bn256.GT).Neg(prodSquared)
 
 	// φDU = tmp + (-2 * prod)  = term1 * term2^{-1} / (prod^2)
 	phiDU := new(bn256.GT).Add(tmp, prodSquaredInv)
@@ -784,20 +806,20 @@ func (voabe *VOABE) DecCS(pk *pk, cph *CPh, skCS *SKcs, SDU []string) (*bn256.GT
 
 // DecDU: DU uses φDU and its own key skDU to recover KR from cph and decrypt it
 func (voabe *VOABE) DecDU(phiDU *bn256.GT, cph *CPh, skDU *Sku) (*bn256.GT, error) {
-	if phiDU == nil || cph == nil || skDU == nil || skDU.Sku2 == nil {
+	if phiDU == nil || cph == nil || skDU == nil || skDU.Sku == nil {
 		return nil, fmt.Errorf("DecDU: nil input")
 	}
 
 	//Compute e(skDU, C')->Pair(CPrime, Sku2)
-	eSkCPrime := bn256.Pair(cph.CPrime, skDU.Sku2)
+	eSkCPrime := bn256.Pair(skDU.Sku, cph.CPrime2)
 
 	//Calculate the denominator denom = φDU · e(skDU, C')
 	denom := new(bn256.GT).Add(phiDU, eSkCPrime)
 
 	//Compute denom^{-1} = denom^{p-1}
-	minusOne := new(big.Int).Sub(voabe.P, big.NewInt(1))
-	denomInv := new(bn256.GT).ScalarMult(denom, minusOne)
-
+	// minusOne := new(big.Int).Sub(voabe.P, big.NewInt(1))
+	// denomInv := new(bn256.GT).ScalarMult(denom, minusOne)
+	denomInv := new(bn256.GT).Neg(denom)
 	//KR = C / (φDU · e(skDU, C')) = C * (φDU · e(skDU,C'))^{-1}
 	KR := new(bn256.GT).Add(cph.C, denomInv)
 

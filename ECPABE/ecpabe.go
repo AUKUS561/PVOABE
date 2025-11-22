@@ -1,10 +1,12 @@
 package ecpabe
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 
 	"github.com/AUKUS561/PVOABE/LSSS"
 	"github.com/fentec-project/bn256"
@@ -23,15 +25,15 @@ func NewECPABE() *ECPABE {
 }
 
 type MK struct {
-	Galpha  *bn256.G1 //g^alpha
-	Galpha2 *bn256.G2
-	beta    *big.Int //β
+	Galpha *bn256.G1 //g^alpha
+	//Galpha2 *bn256.G2
+	beta *big.Int //β
 }
 
 type PK struct {
 	G    *bn256.G1
 	G2   *bn256.G2
-	H    *bn256.G1 //h = g^β
+	HG2  *bn256.G2 //h = g^β
 	Base *bn256.GT //e(g,g)^alpha
 }
 
@@ -43,20 +45,20 @@ func (ecpabe *ECPABE) Setup() (*MK, *PK) {
 
 	g := new(bn256.G1).ScalarBaseMult(big.NewInt(1))
 	g2 := new(bn256.G2).ScalarBaseMult(big.NewInt(1))
-	h := new(bn256.G1).ScalarMult(g, beta)       //h = g^β
+	hG2 := new(bn256.G2).ScalarMult(g2, beta)    //h = g^β
 	galpha := new(bn256.G1).ScalarMult(g, alpha) //g^alpha
-	galpha2 := new(bn256.G2).ScalarMult(g2, alpha)
+	//galpha2 := new(bn256.G2).ScalarMult(g2, alpha)
 
 	egg := bn256.Pair(g, g2)
 	base := new(bn256.GT).ScalarMult(egg, alpha)
 	return &MK{
-			Galpha:  galpha,
-			Galpha2: galpha2,
-			beta:    beta,
+			Galpha: galpha,
+			//Galpha2: galpha2,
+			beta: beta,
 		}, &PK{
 			G:    g,
 			G2:   g2,
-			H:    h,
+			HG2:  hG2,
 			Base: base,
 		}
 }
@@ -72,7 +74,7 @@ type UPi struct {
 
 type TKi struct {
 	Attrs []string             // Si
-	D     *bn256.G2            // Di
+	D     *bn256.G1            // Di
 	Dj    map[string]*bn256.G2 // j -> D{i,j}
 	Djp   map[string]*bn256.G2 // j -> D'{i,j}
 }
@@ -112,12 +114,12 @@ func (ecpabe *ECPABE) KeyGen(U []string, MK *MK, Si []string) (EncKey, DecKey *b
 	ri, _ := sampler.Sample()
 	ri.Mod(ri, ecpabe.P)
 	//Compute Di = (Galpha * g^{ri})^{1/(β zi)}
-	gRi := new(bn256.G2).ScalarMult(g2, ri)
-	num := new(bn256.G2).Add(MK.Galpha2, gRi) // num = g^{α + ri}
-	den := new(big.Int).Mul(MK.beta, zi)      // β * z_i
+	gRi := new(bn256.G1).ScalarMult(g, ri)
+	num := new(bn256.G1).Add(MK.Galpha, gRi) // num = g^{α + ri}
+	den := new(big.Int).Mul(MK.beta, zi)     // β * z_i
 	den.Mod(den, ecpabe.P)
 	invDen := new(big.Int).ModInverse(den, ecpabe.P) //1/(β zi)
-	tk.D = new(bn256.G2).ScalarMult(num, invDen)
+	tk.D = new(bn256.G1).ScalarMult(num, invDen)
 
 	invZi := new(big.Int).ModInverse(zi, ecpabe.P) //1/zi
 	for _, j := range Si {
@@ -152,19 +154,72 @@ func (ecpabe *ECPABE) KeyGen(U []string, MK *MK, Si []string) (EncKey, DecKey *b
 }
 
 type PreCT struct {
-	MSP  *abe.MSP         // (M, ρ)
-	C    *bn256.G1        // h^s
+	MSP  *abe.MSP // (M, ρ)
+	Mes  *bn256.GT
+	C    *bn256.GT
+	Com  *bn256.G2        // h^s
 	Cpre map[int]*big.Int //Ci^pre = H2(ρ(i)||sB) * λi
 }
 
-func (ecpabe *ECPABE) Encrypt(pk *PK, EKb *big.Int, msp *abe.MSP) (*PreCT, error) {
-	sampler := sample.NewUniform(ecpabe.P)
+// Generate an access structure
+func GeneratePolicy(attrCount int) string {
 
+	attrs := make([]string, attrCount)
+	for i := 0; i < attrCount; i++ {
+		attrs[i] = "Attr" + strconv.Itoa(i+1)
+	}
+
+	randInt := func(n int) int {
+		r, _ := rand.Int(rand.Reader, big.NewInt(int64(n)))
+		return int(r.Int64())
+	}
+
+	for i := attrCount - 1; i > 0; i-- {
+		j := randInt(i + 1)
+		attrs[i], attrs[j] = attrs[j], attrs[i]
+	}
+
+	var build func([]string) string
+	build = func(list []string) string {
+
+		if len(list) == 1 {
+			return list[0]
+		}
+
+		op := "AND"
+		if randInt(2) == 0 {
+			op = "OR"
+		}
+
+		split := randInt(len(list)-1) + 1 // [1, len-1]
+		left := build(list[:split])
+		right := build(list[split:])
+
+		return "(" + left + " " + op + " " + right + ")"
+	}
+
+	policy := build(attrs)
+
+	if len(policy) > 2 && policy[0] == '(' && policy[len(policy)-1] == ')' {
+		policy = policy[1 : len(policy)-1]
+	}
+
+	return policy
+}
+
+func (ecpabe *ECPABE) Encrypt(pk *PK, EKb *big.Int, attrNum int) (*PreCT, error) {
+	sampler := sample.NewUniform(ecpabe.P)
+	_, keyGt, err := bn256.RandomGT(rand.Reader)
+	policy := GeneratePolicy(attrNum)
+	//policy := "Attr2 OR (Attr1 AND Attr3)"
+	msp, _ := abe.BooleanToMSP(policy, false) //根据访问控制策略构建msp矩阵
 	// s ∈ Zp
 	s, _ := sampler.Sample()
 
+	C := new(bn256.GT).Add(keyGt, new(bn256.GT).ScalarMult(pk.Base, s))
+
 	//Compute C = h^s
-	C := new(bn256.G1).ScalarMult(pk.H, s)
+	Com := new(bn256.G2).ScalarMult(pk.HG2, s)
 
 	//LSSS.Share -> λi = Mi · v，v[0] = s
 	lambdaMap, err := LSSS.Share(msp, s, ecpabe.P)
@@ -192,15 +247,18 @@ func (ecpabe *ECPABE) Encrypt(pk *PK, EKb *big.Int, msp *abe.MSP) (*PreCT, error
 
 	preCT := &PreCT{
 		MSP:  msp,
+		Mes:  keyGt,
 		C:    C,
+		Com:  Com,
 		Cpre: Cpre,
 	}
 	return preCT, nil
 }
 
 type CipherText struct {
-	MSP *abe.MSP          // (M, ρ)
-	C   *bn256.G1         // C = h^s
+	MSP *abe.MSP // (M, ρ)
+	C   *bn256.GT
+	Com *bn256.G2         // C = h^s
 	C1  map[int]*bn256.G1 //Ci  = g^{λi}
 	C2  map[int]*bn256.G1 //Ci' = H1(ρ(i))^{λi}
 }
@@ -230,6 +288,7 @@ func (ecpabe *ECPABE) OutEncrypt(pk *PK, upB *UPi, preCT *PreCT) (*CipherText, e
 	ct := &CipherText{
 		MSP: preCT.MSP,
 		C:   preCT.C,
+		Com: preCT.Com,
 		C1:  C1,
 		C2:  C2,
 	}
@@ -280,10 +339,10 @@ func (ecpabe *ECPABE) OutDecrypt(pk *PK, ct *CipherText, tkA *TKi) (*bn256.GT, e
 		den := bn256.Pair(CiPrime, Dpij)
 
 		// den^{-1} = den^{p-1}
-		invDen := new(bn256.GT).ScalarMult(den, negOne)
+		//invDen := new(bn256.GT).ScalarMult(den, negOne)
 
 		// sharei = num * den^{-1}
-		share := new(bn256.GT).Add(num, invDen)
+		share := new(bn256.GT).Add(num, new(bn256.GT).Neg(den))
 
 		shares[i] = share
 	}
@@ -299,7 +358,7 @@ func (ecpabe *ECPABE) OutDecrypt(pk *PK, ct *CipherText, tkA *TKi) (*bn256.GT, e
 	}
 
 	//Compute e(C, DA) / A
-	eCD := bn256.Pair(ct.C, tkA.D)
+	eCD := bn256.Pair(tkA.D, ct.Com)
 
 	// A^{-1} = A^{p-1}
 	invA := new(bn256.GT).ScalarMult(A, negOne)
@@ -311,7 +370,7 @@ func (ecpabe *ECPABE) OutDecrypt(pk *PK, ct *CipherText, tkA *TKi) (*bn256.GT, e
 }
 
 // Decrypt(PK, transCT, DKA)->key
-func (ecpabe *ECPABE) Decrypt(transCT *bn256.GT, DKA *big.Int) (*bn256.GT, error) {
+func (ecpabe *ECPABE) Decrypt(ct *CipherText, transCT *bn256.GT, DKA *big.Int) (*bn256.GT, error) {
 	if transCT == nil || DKA == nil {
 		return nil, errors.New("Decrypt: transCT or DKA is nil")
 	}
@@ -320,8 +379,9 @@ func (ecpabe *ECPABE) Decrypt(transCT *bn256.GT, DKA *big.Int) (*bn256.GT, error
 
 	// Key = transCT^{DKA} = e(g,g)^{α·s}
 	Key := new(bn256.GT).ScalarMult(transCT, exp)
+	keyGT := new(bn256.GT).Add(ct.C, new(bn256.GT).Neg(Key))
 
-	return Key, nil
+	return keyGT, nil
 }
 
 //——————————————————————————————————————Auxiliary Functions————————————————————————————————————————————//
