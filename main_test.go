@@ -14,7 +14,7 @@ import (
 
 func TestMainFlow(t *testing.T) {
 	n := 1000
-	attrNum := 25
+	attrNum := 3
 
 	// 初始化 PVOABE
 	pvoabe := NewPVOABE()

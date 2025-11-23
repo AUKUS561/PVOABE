@@ -1,9 +1,11 @@
 package feabse
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"log"
 	"math/big"
+	"strconv"
 
 	"github.com/AUKUS561/PVOABE/LSSS"
 	"github.com/fentec-project/bn256"
@@ -19,6 +21,52 @@ func NewFEABSE() *FEABSE {
 	return &FEABSE{
 		P: bn256.Order,
 	}
+}
+
+// Generate an access structure
+func GeneratePolicy(attrCount int) string {
+
+	attrs := make([]string, attrCount)
+	for i := 0; i < attrCount; i++ {
+		attrs[i] = "Attr" + strconv.Itoa(i+1)
+	}
+
+	randInt := func(n int) int {
+		r, _ := rand.Int(rand.Reader, big.NewInt(int64(n)))
+		return int(r.Int64())
+	}
+
+	for i := attrCount - 1; i > 0; i-- {
+		j := randInt(i + 1)
+		attrs[i], attrs[j] = attrs[j], attrs[i]
+	}
+
+	var build func([]string) string
+	build = func(list []string) string {
+
+		if len(list) == 1 {
+			return list[0]
+		}
+
+		op := "AND"
+		if randInt(2) == 0 {
+			op = "OR"
+		}
+
+		split := randInt(len(list)-1) + 1 // [1, len-1]
+		left := build(list[:split])
+		right := build(list[split:])
+
+		return "(" + left + " " + op + " " + right + ")"
+	}
+
+	policy := build(attrs)
+
+	if len(policy) > 2 && policy[0] == '(' && policy[len(policy)-1] == ')' {
+		policy = policy[1 : len(policy)-1]
+	}
+
+	return policy
 }
 
 // MPK = (PP, g^β, g^γ, e(g,g)^α, {PAK_x})
@@ -102,10 +150,10 @@ func (feabse *FEABSE) Setup(U []string) (*MPK, *MSK) {
 
 // SKdu = (D1, D2, D3, D4, D5, {Dx, Tx})
 type SKdu struct {
-	D1 *bn256.G2            // g^α · g^{γt}
+	D1 *bn256.G1            // g^α · g^{γt}
 	D2 *bn256.G2            // g^t
-	D3 *bn256.G2            // g^{yβ}
-	D4 *bn256.G2            // g^y
+	D3 *bn256.G1            // g^{yβ}
+	D4 *bn256.G1            // g^y
 	D5 *big.Int             // β / y
 	Dx map[string]*bn256.G2 // Dx = H0(x)^{t/ηx}
 	Tx map[string]*bn256.G1 // Tx = H0(x)^β
@@ -120,10 +168,10 @@ func (feabse *FEABSE) KeyGen(mpk *MPK, msk *MSK, SID []string) *SKdu {
 	y, _ := sampler.Sample()
 
 	// D1 = g2^α · g2^{γt}
-	D1alpha := new(bn256.G2).ScalarMult(mpk.G2, msk.Alpha)
-	g2Gamma := new(bn256.G2).ScalarMult(mpk.G2, msk.Gamma)
-	g2GammaT := new(bn256.G2).ScalarMult(g2Gamma, t)
-	D1 := new(bn256.G2).Add(D1alpha, g2GammaT)
+	D1alpha := new(bn256.G1).ScalarMult(mpk.G, msk.Alpha)
+	g2Gamma := new(bn256.G1).ScalarMult(mpk.G, msk.Gamma)
+	g2GammaT := new(bn256.G1).ScalarMult(g2Gamma, t)
+	D1 := new(bn256.G1).Add(D1alpha, g2GammaT)
 
 	// D2 = g2^t
 	D2 := new(bn256.G2).ScalarMult(mpk.G2, t)
@@ -131,10 +179,10 @@ func (feabse *FEABSE) KeyGen(mpk *MPK, msk *MSK, SID []string) *SKdu {
 	// D3 = g2^{y β}
 	yBeta := new(big.Int).Mul(y, msk.Beta)
 	yBeta.Mod(yBeta, feabse.P)
-	D3 := new(bn256.G2).ScalarMult(mpk.G2, yBeta)
+	D3 := new(bn256.G1).ScalarMult(mpk.G, yBeta)
 
 	// D4 = g2^y
-	D4 := new(bn256.G2).ScalarMult(mpk.G2, y)
+	D4 := new(bn256.G1).ScalarMult(mpk.G, y)
 
 	// D5 = β / y = β · y^{-1} mod p
 	yInv := new(big.Int).ModInverse(y, feabse.P)
@@ -184,7 +232,7 @@ func (feabse *FEABSE) KeyGen(mpk *MPK, msk *MSK, SID []string) *SKdu {
 type IC struct {
 	S       *big.Int             // The random s selected during the offline phase is required for online encryption
 	IC0     *bn256.GT            // IC0 = e(g,g)^{α s} = (EGGAlpha)^s
-	IC1     *bn256.G1            // IC1 = g^s
+	IC1     *bn256.G2            // IC1 = g^s
 	ICAttr1 map[string]*bn256.G1 // For each attr x: ICi= H0(x)^{-γx}
 	ICAttr2 map[string]*bn256.G1 // For each attr x: ICi2^ = PAKx^{γx}
 }
@@ -200,7 +248,7 @@ func (feabse *FEABSE) OfflineEnc(mpk *MPK) *IC {
 	IC0 := new(bn256.GT).ScalarMult(mpk.EGGAlpha, s)
 
 	// IC1 = g^s
-	IC1 := new(bn256.G1).ScalarMult(mpk.G, s)
+	IC1 := new(bn256.G2).ScalarMult(mpk.G2, s)
 
 	// For each attr x ∈ U compute (ICi}, ICi2)
 	ICAttr1 := make(map[string]*bn256.G1, len(mpk.PAK))
@@ -237,7 +285,7 @@ type CT struct {
 	MSP *abe.MSP //(M, ρ)
 
 	C0 *bn256.GT // C0 = Kθ · e(g,g)^{α s}
-	C1 *bn256.G1 // C1 = g^s
+	C1 *bn256.G2 // C1 = g^s
 
 	// 每一行 i 的 Ci1, Ci2，下标 i 就是 LSSS 矩阵的行号
 	C1i map[int]*bn256.G1
@@ -247,7 +295,11 @@ type CT struct {
 	CTx map[string]*bn256.GT // attr x -> CTx
 }
 
-func (feabse *FEABSE) OnlineEnc(mpk *MPK, ic *IC, Ktheta *bn256.GT, msp *abe.MSP) (*CT, error) {
+func (feabse *FEABSE) OnlineEnc(mpk *MPK, ic *IC, Ktheta *bn256.GT, attrNum int) (*CT, error) {
+	// 3. 构造访问策略并转成 MSP
+	policy := GeneratePolicy(attrNum)
+	msp, err := abe.BooleanToMSP(policy, false)
+
 	//用 LSSS.Share 计算每一行的 share λi (ξi)
 	lambdaMap, err := LSSS.Share(msp, ic.S, feabse.P)
 	if err != nil {
@@ -263,7 +315,7 @@ func (feabse *FEABSE) OnlineEnc(mpk *MPK, ic *IC, Ktheta *bn256.GT, msp *abe.MSP
 	}
 
 	// C1 = IC1 = g^s
-	C1 := new(bn256.G1).Set(ic.IC1)
+	C1 := new(bn256.G2).Set(ic.IC1)
 
 	//For each row i Compute Ci1, Ci2
 	//    Ci1 = g^{γ λi} · ICi}
@@ -317,10 +369,10 @@ func (feabse *FEABSE) OnlineEnc(mpk *MPK, ic *IC, Ktheta *bn256.GT, msp *abe.MSP
 
 // TK = {D6, D2', Dx'}
 type TK struct {
-	D6      *bn256.G2            // (D1)^{1/D5} · Du
+	D6      *bn256.G1            // (D1)^{1/D5} · Du
 	D2Prime *bn256.G2            // D2^{1/D5}
 	DxPrime map[string]*bn256.G2 // For each attr x: Dx' = Dx^{1/D5}
-	Du      *bn256.G2            // g^u，Only for DU
+	Du      *bn256.G1            // g^u，Only for DU
 }
 
 // TKGen(MPK, SKdu) → TK
@@ -329,7 +381,7 @@ func (feabse *FEABSE) TKGen(mpk *MPK, sk *SKdu) *TK {
 
 	// u ∈ Zp，Du = g2^u
 	u, _ := sampler.Sample()
-	Du := new(bn256.G2).ScalarMult(mpk.G2, u)
+	Du := new(bn256.G1).ScalarMult(mpk.G, u)
 
 	// D5 inv: (1 / D5) = D5^{-1} mod p = (y/β)
 	invD5 := new(big.Int).ModInverse(sk.D5, feabse.P)
@@ -338,10 +390,10 @@ func (feabse *FEABSE) TKGen(mpk *MPK, sk *SKdu) *TK {
 	}
 
 	// D1^{1/D5} = D1^{invD5} ∈ G2
-	D1Pow := new(bn256.G2).ScalarMult(sk.D1, invD5)
+	D1Pow := new(bn256.G1).ScalarMult(sk.D1, invD5)
 
 	// D6 = D1^{1/D5} · Du
-	D6 := new(bn256.G2).Add(D1Pow, Du)
+	D6 := new(bn256.G1).Add(D1Pow, Du)
 
 	// D2' = D2^{1/D5}
 	D2Prime := new(bn256.G2).ScalarMult(sk.D2, invD5)
@@ -370,7 +422,7 @@ func (feabse *FEABSE) TCTGen(mpk *MPK, ct *CT, SID []string, tk *TK) (*bn256.GT,
 	}
 
 	// numerator = e(C1, D6)
-	numerator := bn256.Pair(ct.C1, tk.D6)
+	numerator := bn256.Pair(tk.D6, ct.C1)
 
 	// denominator 初始化为单位元 1，用 EGG^0 实现
 	denominator := new(bn256.GT).ScalarMult(mpk.EGG, big.NewInt(0))
@@ -413,7 +465,7 @@ func (feabse *FEABSE) TCTGen(mpk *MPK, ct *CT, SID []string, tk *TK) (*bn256.GT,
 // Dec(CT2, TCT, SKdu, TK) → Kθ
 func (feabse *FEABSE) Dec(ct *CT, TCT *bn256.GT, sk *SKdu, tk *TK) *bn256.GT {
 	//Compute e(C1, Du)
-	eC1Du := bn256.Pair(ct.C1, tk.Du)
+	eC1Du := bn256.Pair(tk.Du, ct.C1)
 
 	// e(C1, Du)^{D5}
 	eC1DuD5 := new(bn256.GT).ScalarMult(eC1Du, sk.D5)
